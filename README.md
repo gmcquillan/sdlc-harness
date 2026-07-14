@@ -13,8 +13,9 @@ store; a context tripwire + handoff files bridge the 150k budget.
     /plugin marketplace add ~/src/sdlc-harness
     /plugin install sdlc@gmcquillan-sdlc
 
-Requires: `gh` (authenticated), `jq`, and the `superpowers` and
-`fable-harness` plugins (skills here wrap theirs).
+Requires: `gh` (authenticated), `jq`, `uuidgen` (util-linux; used for
+handoff filenames), and the `superpowers` and `fable-harness` plugins
+(skills here wrap theirs).
 
 ## Skills
 

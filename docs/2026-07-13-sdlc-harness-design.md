@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-13
 **Status:** Draft, pending review
-**Plugin name:** `sdlc` (published in the `gmcquillan-plugins` marketplace, sourced from `~/src/sdlc-harness`)
+**Plugin name:** `sdlc` (published in its own `gmcquillan-sdlc` marketplace, sourced from `~/src/sdlc-harness`; the original "add to the existing gmcquillan-plugins marketplace" idea was superseded during planning because that marketplace lives inside the fable-harness repo — see the implementation plan's Global Constraints)
 
 ## Purpose
 
@@ -217,7 +217,11 @@ Same infrastructure pattern as fable-harness's `stub-check.sh`.
   which thresholds have fired; each fires at most once per session.
 - Compaction caveat: after the harness compacts a session, the transcript
   file no longer equals live context; the byte heuristic overestimates,
-  which fails safe (early handoff, never a blown budget).
+  which fails safe (early handoff, never a blown budget). Deliberately,
+  the hook also re-arms (re-baselines) on `compact`/`resume` SessionStart
+  events, so a post-compaction session may be nudged to hand off again —
+  consistent with this plugin's stance that handoff beats compaction.
+  Drop `compact` from the baseline matcher to disable that re-nag.
 
 #### `sdlc:handoff` (write side)
 
@@ -295,7 +299,7 @@ injection.
 sdlc-harness/
 ├── .claude-plugin/
 │   ├── plugin.json          # name: sdlc
-│   └── marketplace.json     # gmcquillan-plugins entry (added to existing marketplace)
+│   └── marketplace.json     # own marketplace: gmcquillan-sdlc (see Plugin name note above)
 ├── skills/
 │   ├── interview/SKILL.md
 │   ├── ticket/SKILL.md
