@@ -1,0 +1,20 @@
+{
+  "name": "gmcquillan-sdlc",
+  "owner": {
+    "name": "Gavin McQuillan",
+    "email": "gavin.mcquillan@gmail.com"
+  },
+  "metadata": {
+    "description": "SDLC pipeline plugin",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "sdlc",
+      "source": "./",
+      "description": "Human-gated SDLC pipeline: interview, ticket, implement, review, handoff, resume — with a 150k context tripwire.",
+      "version": "0.1.0",
+      "strict": true
+    }
+  ]
+}
