@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Repo: `~/src/sdlc-harness`. Plugin name: `sdlc`. Version: `0.1.0`. Marketplace name: `gmcquillan-sdlc` (own marketplace, `source: "./"` — same pattern as fable-harness; the spec's "add to existing marketplace" is superseded because that marketplace lives inside the fable-harness repo).
-- Hook dependencies: bash, `jq`, `git`, `coreutils` only. No new dependencies.
+- Hook dependencies: standard POSIX userland only — bash, `jq`, `git`, coreutils, `grep`/`sed`/`awk`/`find` (the same set fable-harness's hooks already use). No new dependencies.
 - Context thresholds: SOFT = `120000` tokens, HARD = `150000` tokens; estimate = transcript bytes ÷ 4.
 - Handoff filename format (exact): `.handoff-$(date +%Y-%m-%d)-$(uuidgen).md`, written at the repo root, matched everywhere by glob `.handoff-*.md`.
 - GitHub labels (exact strings): `sdlc:epic`, `sdlc:task`, `sdlc:in-progress`, `sdlc:in-review`.
