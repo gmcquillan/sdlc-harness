@@ -93,7 +93,13 @@ Within any phase, if context approaches the budget:
 ```
 tripwire hook fires ──► /sdlc:handoff ──► .handoff-<date>-<uuid>.md
                                                 │
-              fresh session ──► /sdlc:resume ──► re-enters phase at recorded step
+                            ┌───────────────────┴───────────────────┐
+              default: fresh session                 --continue: fresh-context
+              (SessionStart hook detects file        subagent dispatched by the
+               and self-invokes /sdlc:resume)        now-supervisor-only parent
+                            └───────────────────┬───────────────────┘
+                                                ▼
+                              /sdlc:resume re-enters phase at recorded step
 ```
 
 ## Components
@@ -229,8 +235,39 @@ Invoked by the tripwire warning or manually at any natural boundary.
    - **Next:** ordered, concrete next actions (imperative, specific)
    - **Gotchas:** dead ends already explored; decisions already made
      (don't re-litigate)
-4. End the turn: tell the user to start a fresh session and run
-   `/sdlc:resume`.
+4. **Continuation.** No hook can flush or reload the live session's
+   context window — that is owned by the harness. The handoff file is
+   therefore the single source of truth, and three pickup mechanisms all
+   read the same format:
+   - **Default (end-of-turn):** end the turn; tell the user to start a
+     fresh session. The `handoff-pickup` SessionStart hook (below) makes
+     the new session self-resume — the human's only manual step is
+     launching `claude`.
+   - **`--continue` (fresh-context subagent, opt-in):** instead of ending
+     the turn, dispatch a general-purpose agent whose prompt is *"read
+     `.handoff-<x>.md` and continue per sdlc:resume."* The agent starts at
+     ~0 tokens; the bloated parent receives only its final summary, so
+     several 150k "generations" can chain inside one interactive session.
+     **Supervisor rule:** after handoff, the parent's budget is spent — it
+     may only dispatch, relay results, and dispatch again. It MUST NOT do
+     further work itself ("just fix one small thing" in a 150k window is
+     the failure mode this rule exists to block). If the parent session
+     dies, the handoff file remains and the default path takes over.
+   - **Headless respawn (`claude -p "/sdlc:resume"`):** deliberately NOT
+     in v1. Fully automatic but weakest interactively — permission
+     prompts must be pre-solved, visibility is poor, and claude-in-claude
+     is hard to steer. Reserved for a future autonomous `/work`
+     queue-drainer (see Out of scope).
+
+#### Hook: `hooks/handoff-pickup.sh` (SessionStart)
+
+Same infrastructure pattern as fable-harness's SessionStart principles
+injection.
+
+- Checks the repo root for `.handoff-*.md` files.
+- If any exist, injects additionalContext: *"A handoff file from a
+  previous session exists at `<path>` — invoke sdlc:resume."*
+- If several exist, lists them all; `sdlc:resume` handles disambiguation.
 
 #### `sdlc:resume` (read side)
 
@@ -268,7 +305,9 @@ sdlc-harness/
 │   └── resume/SKILL.md
 ├── hooks/
 │   ├── hooks.json           # PostToolUse → context-tripwire.sh
-│   └── context-tripwire.sh
+│   │                        # SessionStart → handoff-pickup.sh
+│   ├── context-tripwire.sh
+│   └── handoff-pickup.sh
 ├── docs/
 │   └── 2026-07-13-sdlc-harness-design.md   # this file
 └── README.md
@@ -292,6 +331,9 @@ sdlc-harness/
 - `context-tripwire.sh` gets a shell test: synthetic transcript files at
   sizes below/between/above thresholds; assert soft fires once, hard
   fires once, debounce holds.
+- `handoff-pickup.sh` gets a shell test: repo with zero, one, and several
+  `.handoff-*.md` files; assert no injection / single-path injection /
+  list-all injection.
 - End-to-end dry run against a throwaway GitHub repo: interview a toy
   feature → ticket → implement one issue → review the PR.
 
@@ -299,7 +341,9 @@ sdlc-harness/
 
 - GitHub Projects boards (flat epic+children suffices; revisit if
   multi-epic coordination appears).
-- Autonomous queue-draining (`/work` loop) — human-gated per phase for
-  now; the label state machine already supports adding it later.
+- Autonomous queue-draining (`/work` loop) and headless respawn
+  (`claude -p "/sdlc:resume"`) — human-gated per phase for now; the label
+  state machine and the shared handoff-file format already support adding
+  both later.
 - Cross-repo epics.
 - Automatic merge of approved PRs.
