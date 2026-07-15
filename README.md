@@ -27,6 +27,7 @@ handoff filenames), and the `superpowers` and `fable-harness` plugins
 | `sdlc:review <PR#>` | Fan-out review vs acceptance criteria, skeptic-verified; never merges |
 | `sdlc:handoff` | Commit WIP + write `.handoff-<date>-<uuid>.md`; `--continue` chains a fresh-context subagent |
 | `sdlc:resume` | Verify handoff against git, archive it, re-enter the phase |
+| `sdlc:cleanup` | Scan worktrees/branches, report, and (on confirmation) delete stale ones; never removes uncommitted work |
 
 ## Hooks
 
@@ -34,6 +35,10 @@ handoff filenames), and the `superpowers` and `fable-harness` plugins
   bytes ÷ 4); nudges handoff once at 120k, hard at 150k.
 - **handoff-pickup** (SessionStart): announces leftover `.handoff-*.md`
   files so fresh sessions self-resume.
+- **lint-before-push** (PreToolUse/Bash): on any `git push`, auto-detects
+  the project linter (Makefile `lint`, package.json `lint` script, or
+  pre-commit) and blocks the push if it fails. Bypass with
+  `SDLC_SKIP_LINT=1`; no linter detected → passes through.
 
 ## Tests
 
