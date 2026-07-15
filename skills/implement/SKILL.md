@@ -21,7 +21,12 @@ per checklist item.
    CLOSED (`gh issue view <ref> --json state`). No candidate → report why
    each open task is blocked and stop.
 2. **Preconditions:** clean `git status`; `gh auth status` succeeds.
-   Either failure → stop and report.
+   Either failure → stop and report. Then **sync the base branch with
+   origin BEFORE any scouting or worktree** (steps 4–5): `git fetch
+   origin` and fast-forward the local base (`main`/`master`) to
+   `origin/<base>`. If the local base has diverged (non-fast-forward) →
+   stop and report rather than force anything. The worktree in step 5
+   MUST branch from this freshly-synced base.
 3. **Claim it** (prevents double pickup by parallel sessions):
    `gh issue edit <n> --add-label "sdlc:in-progress" --add-assignee "@me"`
 4. **Understand.** Read the issue body and the spec section it links —
