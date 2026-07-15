@@ -14,13 +14,15 @@ item.
 
 ## Checklist
 
-1. **Detect the base branch.** `git remote show origin 2>/dev/null | sed
-   -n 's/.*HEAD branch: //p'`; fall back to whichever of `main`/`master`
-   exists. Record the current branch (`git branch --show-current`).
+1. **Detect the base branch** (local only — no network). `git
+   symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed
+   's@^origin/@@'`; if `origin/HEAD` isn't set locally that prints
+   nothing, so fall back to whichever of `main`/`master` exists. Record
+   the current branch (`git branch --show-current`).
 2. **Scan (all read-only — nothing is deleted in this step).**
    - **Uncommitted changes:** `git status --porcelain` in the main
-     working tree, and for each worktree path from step's worktree list.
-     Any output = that tree is dirty.
+     working tree, and in each worktree path from the Worktrees scan
+     below. Any output = that tree is dirty.
    - **Worktrees:** `git worktree list --porcelain`. For each (excluding
      the main tree and the one you are standing in), note its branch and
      whether that branch is merged into base or has upstream `[gone]`.
