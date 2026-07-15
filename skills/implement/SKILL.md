@@ -51,7 +51,12 @@ per checklist item.
 9. **Self-review.** Invoke `superpowers:requesting-code-review` on the
    branch diff; fix findings before delivery (verify each finding
    technically first — no performative agreement).
-10. **Deliver.**
+10. **Lint.** Run the project's linter/formatter and fix every finding
+    before pushing. The `lint-before-push` hook is a backstop, not a
+    substitute — running lint here surfaces failures in-loop instead of
+    as a blocked push. The same gate applies to any later push that
+    fixes CI on the open PR.
+11. **Deliver.**
 
     ```bash
     git push -u origin "sdlc/<issue#>-<slug>"
@@ -66,7 +71,7 @@ per checklist item.
     gh issue comment <n> --body "PR: <pr-url>"
     ```
 
-11. **Stop.** Never merge; never push to main/master. Suggest:
+12. **Stop.** Never merge; never push to main/master. Suggest:
     "Run `/sdlc:review <PR#>` in a fresh session."
 
 ## If the context tripwire fires mid-issue
