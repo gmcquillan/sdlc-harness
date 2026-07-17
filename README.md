@@ -1,23 +1,89 @@
 # sdlc-harness
 
-Human-gated SDLC pipeline for Claude Code. Each phase is a skill run in
-its own (usually fresh) session; GitHub + committed docs are the state
-store; a context tripwire + handoff files bridge the 150k budget.
+A human-gated software-development pipeline for [Claude
+Code](https://docs.claude.com/en/docs/claude-code), packaged as a plugin.
+It turns a rough idea into shipped code through a chain of discrete
+phases — interview, spec, tickets, implementation, review — each run as
+its own skill, with a human approval gate at every step that matters.
 
-    /sdlc:interview ──► spec ──► /sdlc:ticket ──► epic + child issues
-                                                        │
-                                                 /sdlc:next [#]
-                                                        │
-      human merges ◄── /sdlc:review <PR#> ◄── PR ◄── /sdlc:implement [#]
+The whole thing is built around one constraint: **a coding agent's
+context window is finite, and quality degrades as it fills.** So instead
+of one long session that slowly forgets its own plan, each phase runs in
+a fresh (or freshly-delegated) session, and durable state lives outside
+the model — in GitHub issues and committed design docs. A context
+tripwire and handoff files let a session that's running low hand its work
+to a clean one without losing the thread.
+
+```
+/sdlc:interview ──► spec ──► /sdlc:ticket ──► epic + child issues
+                                                    │
+                                             /sdlc:next [#]
+                                                    │
+  human merges ◄── /sdlc:review <PR#> ◄── PR ◄── /sdlc:implement [#]
+```
+
+## Why
+
+Long agentic coding sessions fail in predictable ways: the agent loses
+track of the plan, silently drops requirements, merges half-finished
+work, or burns its context re-reading files it already understood. This
+harness addresses each directly:
+
+- **State lives outside the model.** The spec is a committed file; the
+  work breakdown is GitHub issues with real dependency edges. A session
+  can die at any point and the next one picks up from git + issues, not
+  from a summary.
+- **Breadth goes to subagents; judgment stays in the main loop.** Bulky
+  exploration (mapping a subsystem, running a test suite, scanning a
+  backlog) is delegated so its output never bloats the deciding session.
+- **Humans gate the irreversible steps.** The pipeline never merges to a
+  shared branch, never pushes, and never opens a PR without explicit
+  confirmation. Approval for one step does not extend to the next.
+- **Running low on context is a first-class event.** At ~120k tokens a
+  tripwire nudges a handoff; the session commits its WIP, writes a
+  handoff file, and a fresh session resumes exactly where it left off.
 
 ## Install
 
-    /plugin marketplace add ~/src/sdlc-harness
+From within Claude Code:
+
+    /plugin marketplace add gmcquillan/sdlc-harness
     /plugin install sdlc@gmcquillan-sdlc
 
-Requires: `gh` (authenticated), `jq`, `uuidgen` (util-linux; used for
-handoff filenames), and the `superpowers` and `fable-harness` plugins
-(skills here wrap theirs).
+**Requires:**
+
+- `gh` — the [GitHub CLI](https://cli.github.com/), authenticated
+  (`gh auth login`)
+- `jq`
+- `uuidgen` (from `util-linux`; used for handoff filenames)
+- The [`superpowers`](https://github.com/obra/superpowers) and
+  `fable-harness` plugins — the skills here wrap their brainstorming,
+  planning, TDD, worktree, and fan-out primitives.
+
+## The pipeline
+
+A typical feature flows through the skills in order. Each is a slash
+command; most run best in a fresh session.
+
+1. **`/sdlc:interview`** — interviews you to pin down intent, then wraps
+   the brainstorming skill to produce a committed spec that ends in a
+   PR-scoped, context-budgeted **Decomposition** section.
+2. **`/sdlc:ticket <spec>`** — translates that decomposition into one
+   epic issue plus `sdlc:task` child issues with dependency edges, behind
+   a dry-run approval gate.
+3. **`/sdlc:next [epic#]`** — surveys the open tasks, ranks the
+   *actionable* ones by how much they unblock (transitive dependents),
+   and hands the highest-leverage ticket to `implement`.
+4. **`/sdlc:implement [#]`** — claims an issue, maps the subsystem with
+   scout subagents, branches in a worktree, plans, executes with TDD in
+   fresh subagents, self-reviews, and opens a PR. **Never merges.**
+5. **`/sdlc:review <PR#>`** — fans out reviewers against the issue's
+   acceptance criteria, skeptic-verifies their findings, and posts a
+   review. **Never merges** — a human does that.
+
+At any point, `/sdlc:handoff` and `/sdlc:resume` bridge a session that's
+running out of context, and `/sdlc:cleanup` reclaims stale worktrees and
+branches once work has merged.
 
 ## Skills
 
@@ -47,4 +113,20 @@ handoff filenames), and the `superpowers` and `fable-harness` plugins
 
     for t in tests/test-*.sh tests/validate-skills.sh; do bash "$t"; done
 
-Design: `docs/2026-07-13-sdlc-harness-design.md`.
+The tests cover the hooks (context tripwire thresholds, handoff pickup,
+lint-before-push detection) and validate every skill's frontmatter.
+
+## Design docs
+
+The design and implementation-plan documents live under `docs/`. Start
+with `docs/2026-07-13-sdlc-harness-design.md` for the overall rationale.
+
+## Contributing
+
+Issues and pull requests are welcome. The repository dogfoods its own
+pipeline — new skills go through interview → spec → ticket →
+implement → review like anything else.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
