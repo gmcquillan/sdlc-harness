@@ -8,7 +8,7 @@ pass=0; fail=0
 ok()   { echo "ok: $1"; pass=$((pass+1)); }
 bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
 
-expected="interview ticket implement review handoff resume cleanup"
+expected="interview ticket next implement review handoff resume cleanup"
 for name in $expected; do
   f="$root/skills/$name/SKILL.md"
   if [ ! -f "$f" ]; then bad "$name: SKILL.md missing"; continue; fi

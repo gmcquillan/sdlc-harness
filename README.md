@@ -6,6 +6,8 @@ store; a context tripwire + handoff files bridge the 150k budget.
 
     /sdlc:interview ──► spec ──► /sdlc:ticket ──► epic + child issues
                                                         │
+                                                 /sdlc:next [#]
+                                                        │
       human merges ◄── /sdlc:review <PR#> ◄── PR ◄── /sdlc:implement [#]
 
 ## Install
@@ -23,6 +25,7 @@ handoff filenames), and the `superpowers` and `fable-harness` plugins
 |---|---|
 | `sdlc:interview` | Interview → committed spec ending in a PR-scoped Decomposition |
 | `sdlc:ticket <spec>` | Decomposition → epic + `sdlc:task` child issues (dry-run gated) |
+| `sdlc:next [epic#]` | Survey open tasks → rank ready ones by tickets-unblocked → confirm → hand off to `implement` |
 | `sdlc:implement [#]` | Claim issue → scout-map → worktree branch → plan → TDD via subagents → PR |
 | `sdlc:review <PR#>` | Fan-out review vs acceptance criteria, skeptic-verified; never merges |
 | `sdlc:handoff` | Commit WIP + write `.handoff-<date>-<uuid>.md`; `--continue` chains a fresh-context subagent |
