@@ -53,6 +53,15 @@ pick it up without rejecting it. Non-ready tickets still appear in the
 graph (they contribute to other tickets' dependent counts and are shown
 as context) but are never the recommendation.
 
+**`ops` tickets.** A repo may label some `sdlc:task` issues `ops`
+(business/ops action; no PR, exempt from the review flow). These are
+ranked normally — they genuinely block downstream work — but are **not**
+candidates for the `implement` handoff, which opens a PR. The handoff
+target is always the top ready *non-ops* ticket; ready `ops` tickets are
+listed separately for the user to action manually. (Surfaced by a smoke
+test against a real backlog, where a high-leverage ticket that was
+`ops`-labeled would otherwise have been handed to `implement`.)
+
 ## Ranking (ready set only)
 
 Sort ready tickets by, in order:
