@@ -73,7 +73,7 @@ the single source of truth; every pickup mechanism reads the same format.
      (`<main_root>`) — it will pick the handoff up automatically." (The
      handoff-pickup SessionStart hook injects it.)
    - **`--continue` (only if invoked with it):** dispatch ONE
-     general-purpose subagent with the prompt: "Read `<repo-root>/<file>`
+     general-purpose subagent with the prompt: "Read `<file>`
      and continue the work per the sdlc:resume skill." Then follow the
      supervisor rule below.
 
