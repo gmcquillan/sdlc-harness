@@ -10,11 +10,17 @@ checklist item.
 
 ## Checklist
 
-1. **Find handoff files:** `ls .handoff-*.md` at the repo root
-   (`git rev-parse --show-toplevel`). One file → use it. Several → list
-   them with mtimes and ask the user which to resume (newest is the
-   default suggestion). None → tell the user there is nothing to resume
-   and stop.
+1. **Find handoff files across every worktree** (the writer puts them at the
+   main root, but scan all trees so none is missed):
+
+   ```bash
+   git worktree list --porcelain | awk '/^worktree /{print $2}' \
+     | while read -r r; do ls "$r"/.handoff-*.md 2>/dev/null; done
+   ```
+
+   One file → use it. Several → list them with mtimes and ask which to
+   resume (newest is the default). None → tell the user there is nothing to
+   resume and stop.
 2. **Read it fully.** The `## Gotchas` section is binding: decisions
    recorded there are settled — do not re-litigate them.
 3. **Verify state against reality — trust git over prose:**
@@ -24,10 +30,17 @@ checklist item.
    - Issue/PR labels as recorded? (`gh issue view <n> --json labels`)
    Where reality disagrees with the file, reality wins; note the
    discrepancy to the user before proceeding.
-4. **Archive the file** so stale handoffs never accumulate: move it into
+4. **Re-enter the recorded worktree.** If `## Refs` names a `Worktree`
+   other than `main`:
+   - It still exists (`git worktree list` contains the path) → operate from
+     there (the phase skill's work happens inside it).
+   - The path is gone but the branch exists → offer to recreate it:
+     `git worktree add <path> <branch>`, then operate from there.
+   - `Worktree: main` or absent → operate in the main tree.
+5. **Archive the file** so stale handoffs never accumulate: move it into
    the session scratchpad directory (or `/tmp` if none). It must leave
    the repo root — the pickup hook keys off that glob.
-5. **Re-enter the phase:** invoke the skill named in `## Phase`
+6. **Re-enter the phase:** invoke the skill named in `## Phase`
    (sdlc:interview, sdlc:ticket, sdlc:implement, or sdlc:review), skip to
    the recorded checklist step, and execute `## Next` in order.
 
