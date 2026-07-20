@@ -43,11 +43,59 @@ verdicts, and judgment. Create a todo per checklist item.
 
    Approval ends with: "Ready for your merge decision." The merge is
    always the human's.
-5. **Fix mode (ONLY if the user asked you to fix, not just review):**
-   check out the PR branch (`gh pr checkout <PR#>`), invoke
-   `superpowers:receiving-code-review` on the verified findings —
-   technically verify each before implementing, push fixes to the
-   branch, then re-run this checklist from step 2.
+5. **Address findings (ONLY if the user asked you to fix, not just
+   review).** Triage → gate → act. Every fix runs in a sub-agent; the main
+   loop never edits files itself, no matter how small the change.
+
+   **Triage.** Sort each *confirmed* finding (survived the skeptic step)
+   into one tier:
+   - **Tier A — fix now:** a bounded edit to files already in the diff (or
+     immediately adjacent), no new subsystem, no plan of its own needed.
+   - **Tier B — ticket it:** needs its own plan, touches a subsystem
+     outside the PR's scope, or is really a *new* acceptance criterion
+     rather than a defect in the current one.
+   - **Tier C — recommend a fresh implementation:** the confirmed findings
+     *aggregate* into a re-do — the PR's approach is wrong, or Tier-B-or-
+     larger findings are numerous enough that rebuilding beats patching.
+     This is a judgment call over the whole findings list, not a per-
+     finding rule.
+
+   **Gate.** Present a triage table — each confirmed finding with its tier
+   and the action it implies — and WAIT for an explicit go-ahead. Issue
+   creation is outward-facing; gate it like `sdlc:ticket`'s dry-run. Create
+   nothing and edit nothing before the yes.
+
+   **Act** (only what was approved):
+   - **Tier A:** check out the branch (`gh pr checkout <PR#>`), then dispatch
+     ONE fresh sub-agent per fix (or a small batched set) running
+     `superpowers:receiving-code-review` + `superpowers:test-driven-development`.
+     The main loop supervises only. When fixes land, re-run this checklist
+     from step 2.
+   - **Tier B:** resolve the epic from the reviewed issue's `Epic: #<n>`
+     line, then create a child issue:
+
+     ```bash
+     gh issue create --label "sdlc:task" \
+       --title "<short finding title>" \
+       --body "Epic: #<epic>
+
+     ## Depends on
+     #<current-issue>   # include only if the fix must land after this PR
+
+     ## Context
+     Found in review of #<PR#> (<file:line>). <failure scenario>.
+
+     ## Acceptance criteria
+     - [ ] <criterion the fix must meet>
+     ## Suggested direction
+     <one or two lines>"
+     ```
+   - **Tier C:** `gh pr review <PR#> --request-changes` with the summary,
+     create a Tier-B-style `sdlc:task` for the redo, and recommend
+     `/sdlc:implement <issue#>` in a fresh session. Do NOT patch the branch.
+
+   Report what was fixed, the URLs of any tickets created, and any redo
+   recommendation.
 
 ## Red flags
 
@@ -56,3 +104,9 @@ verdicts, and judgment. Create a todo per checklist item.
 - Posting reviewer findings nobody tried to refute → skeptic step is not
   optional for blocking findings.
 - Merging an approved PR "to save a step" → human gate violated.
+- Editing files from the main loop to "just fix it quickly" → every fix
+  runs in a sub-agent; the main loop is supervisor only.
+- Creating tickets or pushing fixes before the triage gate → the go-ahead
+  is required, exactly like sdlc:ticket's dry-run.
+- Patching a branch whose approach is wrong (Tier C) instead of
+  recommending a fresh sdlc:implement → you are polishing a rewrite.
