@@ -18,12 +18,20 @@ the single source of truth; every pickup mechanism reads the same format.
    `git add -A && git commit -m "wip: handoff checkpoint"` — or, if the
    tree mixes unrelated changes, `git stash push -m "sdlc-handoff"` and
    record the stash name. Never leave state only in your context.
-2. **Ensure the ignore rule.** If `.handoff-*.md` is not in the
-   project's `.gitignore`, append it and commit that one-line change.
-3. **Write the handoff file** at the repo root:
+2. **Ensure the ignore rule (once, shared across all worktrees).** Add
+   `.handoff-*.md` to the common git dir's exclude file so it is ignored in
+   the main tree and every worktree without a commit:
 
    ```bash
-   f=".handoff-$(date +%Y-%m-%d)-$(uuidgen).md"
+   excl="$(git rev-parse --path-format=absolute --git-common-dir)/info/exclude"
+   grep -qxF '.handoff-*.md' "$excl" 2>/dev/null || echo '.handoff-*.md' >> "$excl"
+   ```
+3. **Write the handoff file at the MAIN worktree root** (never the current
+   worktree — a fresh session launched in the main repo must find it):
+
+   ```bash
+   main_root=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
+   f="$main_root/.handoff-$(date +%Y-%m-%d)-$(uuidgen).md"
    ```
 
    Content template (keep these exact headings — sdlc:resume parses them):
@@ -37,6 +45,7 @@ the single source of truth; every pickup mechanism reads the same format.
    ## Refs
    - Issue: #<n> / PR: #<n> / Epic: #<n>
    - Branch: sdlc/<issue#>-<slug>
+   - Worktree: <absolute worktree path, or "main" if written from the main tree>
    - Spec: docs/specs/<file>.md
    - Plan: <path, if one exists>
 
@@ -60,9 +69,9 @@ the single source of truth; every pickup mechanism reads the same format.
 
 4. **Choose the continuation path:**
    - **Default:** end the turn. Tell your human partner: "Handoff written
-     to `<file>`. Start a fresh session in this directory — it will pick
-     the handoff up automatically." (The handoff-pickup SessionStart hook
-     injects it.)
+     to `<file>`. Start a fresh session in the main repo directory
+     (`<main_root>`) — it will pick the handoff up automatically." (The
+     handoff-pickup SessionStart hook injects it.)
    - **`--continue` (only if invoked with it):** dispatch ONE
      general-purpose subagent with the prompt: "Read `<repo-root>/<file>`
      and continue the work per the sdlc:resume skill." Then follow the
