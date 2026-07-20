@@ -28,6 +28,17 @@ item.
      whether that branch is merged into base or has upstream `[gone]`.
      Also run `git worktree prune --dry-run` for stale administrative
      entries (worktree dirs that no longer exist on disk).
+   - **Standing-in-a-worktree check:** compare `git rev-parse
+     --show-toplevel` against the main root (`git worktree list --porcelain
+     | awk '/^worktree /{print $2; exit}'`). If they differ, this session is
+     inside a linked worktree — git cannot remove the tree you stand in.
+     Report it and tell the user to re-run `sdlc:cleanup` from the main repo
+     (`<main-root>`) to reclaim that worktree. Keep reporting the other
+     categories normally.
+   - **Stray handoffs:** scan every worktree root
+     (`git worktree list --porcelain | awk '/^worktree /{print $2}'`) for
+     `.handoff-*.md`. Report each under its own heading, flagged
+     "un-resumed handoff — remove only if that work is done or abandoned."
    - **Local branches**, via `git for-each-ref --format
      '%(refname:short) %(upstream:track)' refs/heads`, classified into:
      - **Merged into base:** appears in `git branch --merged <base>`.
@@ -41,9 +52,9 @@ item.
      - Always exclude: the current branch, the base branch, and any
        branch checked out in a worktree that is not itself being removed.
 3. **Report** the findings grouped as: Uncommitted (per tree),
-   Prunable worktrees, Deletable branches (merged / upstream-gone, each
-   with the reason), and Review-manually branches. If everything is
-   clean, say so and stop.
+   Prunable worktrees, Stray handoffs, Deletable branches (merged /
+   upstream-gone, each with the reason), and Review-manually branches. If
+   everything is clean, say so and stop.
 4. **Confirmation gate (the human gate).** Present the deletable
    worktrees and branches and ask the user to confirm — all, or a
    selected subset. Delete NOTHING before an explicit yes.
@@ -53,6 +64,9 @@ item.
      prune`.
    - Branches: `git branch -d <branch>` for merged; `git branch -D
      <branch>` for upstream-gone (state the reason when you do).
+   - **Stray handoffs:** delete confirmed `.handoff-*.md` files. When a
+     worktree is removed, also delete any handoff that lived in it or that
+     names its path in `## Refs`, so the pointer never outlives its target.
    - **Uncommitted files: reported only, never deleted** — leave them for
      the human.
 6. **Report** exactly what was removed, and restate any dirty trees or
@@ -73,3 +87,5 @@ item.
   say the remote branch was deleted; let the human judge.
 - `git clean` / deleting untracked files to "tidy up" → out of scope;
   uncommitted work is the user's.
+- Silently skipping the worktree you are standing in → say you cannot
+  remove it and where to re-run from; do not pretend it is clean.
