@@ -527,6 +527,6 @@ git commit -m "feat(cleanup): detect standing-in-worktree and sweep stray handof
 - Part 3 handoff sweep on worktree removal → Task 5 Step 3. ✓
 - Spec test bullets: "pickup finds handoff regardless of launch dir" → Task 2 test; "handoff lands in main root" + "info/exclude gets the rule" → Task 3 `test-handoff-worktree.sh`; "cleanup reports stray-handoff category" → Task 5 grep check (skill prose, not script — verified by content check, the only mechanism this repo has for skill bodies). ✓
 
-**Placeholder scan:** No TBD/TODO; every code/edit step shows literal content and exact commands with expected output. ✓
+**Placeholder scan:** No unfinished-work markers; every code/edit step shows literal content and exact commands with expected output. ✓
 
 **Type consistency:** Main-root command is identical everywhere (`git worktree list --porcelain | awk '/^worktree /{print $2; exit}'` for single, without `exit` for the loop). `Worktree:` ref format defined in Task 3, consumed verbatim in Tasks 4 and 5. `info/exclude` snippet identical in the test (Task 3 Step 1) and the skill (Task 3 Step 3). ✓
