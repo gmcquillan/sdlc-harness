@@ -42,5 +42,18 @@ plain="$tmp/plain"; mkdir -p "$plain"; touch "$plain/.handoff-2026-07-13-cccc.md
 hook "$plain"
 contains "non-repo cwd works" ".handoff-2026-07-13-cccc.md"
 
+# --- worktree scanning ---
+wtrepo="$tmp/wtrepo"; mkdir -p "$wtrepo"; git -C "$wtrepo" init -q
+git -C "$wtrepo" config user.email t@t; git -C "$wtrepo" config user.name t
+git -C "$wtrepo" commit -q --allow-empty -m init
+git -C "$wtrepo" worktree add -q "$tmp/wt-a" -b feat-a
+touch "$tmp/wt-a/.handoff-2026-07-19-cccc.md"
+# launched from the MAIN repo, the hook must still find the worktree's file:
+hook "$wtrepo"
+contains "finds handoff in linked worktree" ".handoff-2026-07-19-cccc.md"
+# launched from INSIDE the worktree, it must still fire:
+hook "$tmp/wt-a"
+contains "fires from inside worktree"       ".handoff-2026-07-19-cccc.md"
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
