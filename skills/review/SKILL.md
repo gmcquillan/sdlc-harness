@@ -69,26 +69,31 @@ verdicts, and judgment. Create a todo per checklist item.
    - **Tier A:** check out the branch (`gh pr checkout <PR#>`), then dispatch
      ONE fresh sub-agent per fix (or a small batched set) running
      `superpowers:receiving-code-review` + `superpowers:test-driven-development`.
-     The main loop supervises only. When fixes land, re-run this checklist
-     from step 2.
-   - **Tier B:** resolve the epic from the reviewed issue's `Epic: #<n>`
-     line, then create a child issue:
+     The main loop supervises only. When fixes land and lint passes, push the
+     branch (`git push`) so the updated PR is what step 2 re-reviews, then
+     re-run this checklist from step 2.
+   - **Tier B:** resolve the epic from the reviewed issue's `## Epic`
+     section (the `#<n>` under that heading), then create a child issue in
+     the same section format `sdlc:task` issues use, so `sdlc:next` /
+     `sdlc:implement` pick it up:
 
      ```bash
      gh issue create --label "sdlc:task" \
        --title "<short finding title>" \
-       --body "Epic: #<epic>
-
-     ## Depends on
-     #<current-issue>   # include only if the fix must land after this PR
-
-     ## Context
+       --body "## Context
      Found in review of #<PR#> (<file:line>). <failure scenario>.
 
      ## Acceptance criteria
      - [ ] <criterion the fix must meet>
+
+     ## Depends on
+     #<current-issue>   # only if the fix must land after this PR; else 'none'
+
      ## Suggested direction
-     <one or two lines>"
+     <one or two lines>
+
+     ## Epic
+     #<epic>"
      ```
    - **Tier C:** `gh pr review <PR#> --request-changes` with the summary,
      create a Tier-B-style `sdlc:task` for the redo, and recommend
