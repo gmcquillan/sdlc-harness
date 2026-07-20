@@ -30,8 +30,8 @@ checklist item.
    - Issue/PR labels as recorded? (`gh issue view <n> --json labels`)
    Where reality disagrees with the file, reality wins; note the
    discrepancy to the user before proceeding.
-4. **Re-enter the recorded worktree.** If `## Refs` names a `Worktree`
-   other than `main`:
+4. **Re-enter the recorded worktree.** Read the `Worktree:` line in
+   `## Refs`:
    - It still exists (`git worktree list` contains the path) → operate from
      there (the phase skill's work happens inside it).
    - The path is gone but the branch exists → offer to recreate it:

@@ -32,6 +32,8 @@ the single source of truth; every pickup mechanism reads the same format.
    ```bash
    main_root=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
    f="$main_root/.handoff-$(date +%Y-%m-%d)-$(uuidgen).md"
+   here=$(git rev-parse --show-toplevel)
+   wt=$([ "$here" = "$main_root" ] && echo main || printf '%s' "$here")
    ```
 
    Content template (keep these exact headings — sdlc:resume parses them):
@@ -45,7 +47,7 @@ the single source of truth; every pickup mechanism reads the same format.
    ## Refs
    - Issue: #<n> / PR: #<n> / Epic: #<n>
    - Branch: sdlc/<issue#>-<slug>
-   - Worktree: <absolute worktree path, or "main" if written from the main tree>
+   - Worktree: <$wt from above — the worktree's absolute path, or "main">
    - Spec: docs/specs/<file>.md
    - Plan: <path, if one exists>
 

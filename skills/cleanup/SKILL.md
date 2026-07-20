@@ -56,7 +56,7 @@ item.
    upstream-gone, each with the reason), and Review-manually branches. If
    everything is clean, say so and stop.
 4. **Confirmation gate (the human gate).** Present the deletable
-   worktrees and branches and ask the user to confirm — all, or a
+   worktrees, branches, and stray handoffs and ask the user to confirm — all, or a
    selected subset. Delete NOTHING before an explicit yes.
 5. **Execute** only what was confirmed:
    - Worktrees: `git worktree remove <path>` (add `--force` ONLY for a
