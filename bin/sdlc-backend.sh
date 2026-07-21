@@ -68,6 +68,10 @@ cmd_set() {
   local backend="" project="" cloud_id="" site="" source="user-selected"
   while [ $# -gt 0 ]; do
     case "$1" in
+      --backend|--project|--cloud-id|--site|--source)
+        [ $# -ge 2 ] || die "set: $1 requires a value" 2 ;;
+    esac
+    case "$1" in
       --backend)  backend="${2:-}";  shift 2 ;;
       --project)  project="${2:-}";  shift 2 ;;
       --cloud-id) cloud_id="${2:-}"; shift 2 ;;
