@@ -196,6 +196,7 @@ something else yields a false `use-github` and is never prompted for.
 | `list_projects` unavailable or empty | Stop and report — no cloud id and site means no `ticket_url`. |
 | `sniff` returns nothing | Not an error. Drop the history line from the prompt and offer the project list plus GitHub. |
 | A tool slot has no matching tool | Omit the slot. `backend-jira.md` defines the fallback for a missing `link_issues` and stops for a missing `search`. |
+| Cached tool map is stale — a name no longer appears in `ToolSearch` | **Re-probe, never fail.** Re-run step 1 and `set-toolmap` the fresh names. The adapter sends readers here mid-session for exactly this; a re-probe does not re-prompt and does not touch the repo binding. |
 | Server named unrecognizably (no `jira`/`atlassian` in its name) | `resolve` yields a false `use-github`. Escape hatch: `--backend jira` on the invocation, or a manual `sdlc-backend.sh set`. |
 | `set` exits 2 | Surface stderr verbatim and stop. Most likely a `jira` binding with no `--project`, or a `--source` outside the two accepted values. |
 | Repo has open GitHub `sdlc:task` issues | Report the count in the prompt and default to GitHub. |
