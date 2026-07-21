@@ -15,6 +15,19 @@ eq()  { # want got desc
   [ "$1" = "$2" ] && ok "$3" || bad "$3 (want '$1' got '$2')"
 }
 
+# The SUT is deliberately BSD/macOS-portable, so its suite must be too:
+# stock macOS ships no `timeout` (it is gtimeout, and only with brew
+# coreutils), which would report exit 127 as a false failure below.
+tmo() { # seconds cmd... -- portable stand-in for GNU timeout
+  local s="$1"; shift
+  if   command -v timeout  >/dev/null 2>&1; then timeout  "$s" "$@"; return $?
+  elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$s" "$@"; return $?
+  fi
+  "$@" & local p=$! rc
+  ( sleep "$s"; kill -9 "$p" 2>/dev/null ) & local w=$!
+  wait "$p"; rc=$?; kill "$w" 2>/dev/null; return "$rc"
+}
+
 mkrepo() { # dir [origin-url] -> initialized repo with one commit
   local d="$1"; mkdir -p "$d"; git -C "$d" init -q
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
@@ -95,8 +108,9 @@ eq "atlassian" "$(cd "$ub" && "$SUT" get-toolmap | jq -r '.server')" \
 # --- cache: atomic writes leave no temp droppings -----------------------
 # repos.json must be the ONLY file in the cache dir after several writes;
 # matching a temp-name pattern instead would pass vacuously if the naming
-# scheme ever changed.
-eq "1" "$(find "$SDLC_HOME" -maxdepth 1 -type f | wc -l)" \
+# scheme ever changed. BSD wc pads its count to a fixed width even from a
+# pipe, and eq is a strict string compare, so squeeze the blanks out.
+eq "1" "$(find "$SDLC_HOME" -maxdepth 1 -type f | wc -l | tr -d ' ')" \
    "no temp files left behind after writes"
 
 # --- cache: malformed repos.json is treated as empty, not fatal ---------
@@ -117,16 +131,16 @@ eq "null" "$(printf '%s' "$out" | jq -r '.backend')" "absent cache reads as empt
 # --- cache: set with a dangling flag exits 2, not an infinite loop -------
 # shift 2 is a no-op (not an error) when only one positional argument is
 # left, so a trailing flag with no value must be caught explicitly or the
-# parser spins at 100% CPU forever. timeout turns a regression into a
-# FAIL (exit 124) instead of hanging this whole suite.
+# parser spins at 100% CPU forever. The watchdog turns a regression into
+# a FAIL instead of hanging this whole suite.
 mv="$tmp/missingval"; mkrepo "$mv" "git@github.com:a/missingval.git"
-(cd "$mv" && timeout 5 "$SUT" set --backend) >/dev/null 2>&1
+(cd "$mv" && tmo 5 "$SUT" set --backend) >/dev/null 2>&1
 eq "2" "$?" "set --backend with no value exits 2, does not hang"
 
-(cd "$mv" && timeout 5 "$SUT" set --backend jira --project) >/dev/null 2>&1
+(cd "$mv" && tmo 5 "$SUT" set --backend jira --project) >/dev/null 2>&1
 eq "2" "$?" "set --project with no value exits 2, does not hang"
 
-(cd "$mv" && timeout 5 "$SUT" set --backend jira --project PROJ) >/dev/null 2>&1
+(cd "$mv" && tmo 5 "$SUT" set --backend jira --project PROJ) >/dev/null 2>&1
 eq "0" "$?" "well-formed set still succeeds"
 eq "jira" "$(cd "$mv" && "$SUT" resolve | jq -r '.backend')" \
    "well-formed set still binds the backend"
