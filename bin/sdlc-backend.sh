@@ -10,8 +10,38 @@ set -u
 
 CACHE_DIR="${SDLC_HOME:-$HOME/.claude/sdlc}"
 CACHE="$CACHE_DIR/repos.json"
+LOCK="$CACHE_DIR/.lock"
 
 die() { printf 'sdlc-backend: %s\n' "$1" >&2; exit "${2:-1}"; }
+
+lock_release() { rm -rf "$LOCK"; }
+
+lock_acquire() { # serialize the read-modify-write over the whole cache
+  # Concurrent sessions across worktrees are this harness's normal mode, and
+  # an unguarded read-modify-write lets the loser write back its stale
+  # snapshot, erasing the winner's binding with exit 0 and no stderr.
+  # flock is util-linux only; mkdir is atomic everywhere.
+  mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
+  local i=0 now started
+  while ! mkdir "$LOCK" 2>/dev/null; do
+    i=$((i+1))
+    now=$(date +%s); started=$(cat "$LOCK/started" 2>/dev/null)
+    case "$started" in
+      # A session killed between the mkdir and the stamp leaves no stamp at
+      # all; give the holder a beat to write one before calling it debris.
+      ''|*[!0-9]*) [ "$i" -ge 10 ] && { lock_release; continue; } ;;
+      # A killed session must not wedge every future one, so break a lock
+      # far older than any real read-modify-write.
+      *) [ "$((now - started))" -ge 30 ] && { lock_release; continue; } ;;
+    esac
+    [ "$i" -lt 50 ] || die "cache is locked by another session; remove $LOCK if stale"
+    sleep 0.1
+  done
+  # Released on a kill mid-operation too, or the next session inherits a
+  # lock it has to wait 30s to break.
+  trap 'lock_release' EXIT HUP INT TERM
+  date +%s > "$LOCK/started"
+}
 
 normalize_remote() { # <url> -> host/owner/name
   local u="$1" host rest
@@ -50,6 +80,17 @@ cache_read() { # -> cache JSON; absent or malformed reads as empty
     cat "$CACHE"
   else
     printf '{"version":1,"repos":{}}\n'
+  fi
+}
+
+cache_quarantine() { # inside the lock, before any read-modify-write
+  # cache_read reads malformed JSON as empty, which is right for resolve but
+  # ruinous here: the next write would discard every other repo's binding
+  # and the toolmap without a word. Keep the wreckage and say where it went.
+  # Still not fatal — that is a spec requirement.
+  if [ -f "$CACHE" ] && ! jq -e . "$CACHE" >/dev/null 2>&1; then
+    mv -f "$CACHE" "$CACHE.bad" || die "cannot quarantine malformed $CACHE"
+    printf 'sdlc-backend: malformed cache quarantined to %s\n' "$CACHE.bad" >&2
   fi
 }
 
@@ -123,6 +164,7 @@ cmd_set() {
     *) die "set: --source must be git-sniff-confirmed or user-selected" 2 ;;
   esac
   local key; key=$(repo_key) || exit 3
+  lock_acquire; cache_quarantine
   cache_read | jq \
     --arg k "$key" --arg b "$backend" --arg p "$project" --arg c "$cloud_id" \
     --arg s "$site" --arg src "$source" --arg d "$(date +%F)" \
@@ -137,6 +179,7 @@ cmd_set() {
 
 cmd_unset() {
   local key; key=$(repo_key) || exit 3
+  lock_acquire; cache_quarantine
   cache_read | jq --arg k "$key" '.version = 1 | .repos = ((.repos // {}) | del(.[$k]))' \
     | cache_write
 }
@@ -144,6 +187,7 @@ cmd_unset() {
 cmd_set_toolmap() { # stdin: the tool map object
   local tm; tm=$(cat)
   printf '%s' "$tm" | jq -e . >/dev/null 2>&1 || die "set-toolmap: stdin is not valid JSON" 2
+  lock_acquire; cache_quarantine
   cache_read | jq --argjson tm "$tm" '.version = 1 | .jira_toolmap = $tm' | cache_write
 }
 

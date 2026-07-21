@@ -86,6 +86,18 @@ eq "1" "$(jq -r '.version' "$SDLC_HOME/repos.json")" "cache records version 1"
 eq "git-sniff-confirmed" \
    "$(jq -r '.repos["github.com/a/cache"].source' "$SDLC_HOME/repos.json")" \
    "cache records bind source"
+eq "$(date +%F)" \
+   "$(jq -r '.repos["github.com/a/cache"].bound_at' "$SDLC_HOME/repos.json")" \
+   "cache records bound_at"
+
+# a second binding, taking the DEFAULT source -- T2 writes user-selected
+# whenever the user picks a project rather than confirming the sniff, and
+# it never passes --source for that case.
+cr2="$tmp/cacherepo2"; mkrepo "$cr2" "git@github.com:a/cache2.git"
+(cd "$cr2" && "$SUT" set --backend github)
+eq "user-selected" \
+   "$(jq -r '.repos["github.com/a/cache2"].source' "$SDLC_HOME/repos.json")" \
+   "cache defaults bind source to user-selected"
 
 # --- cache: unbound repo reports backend null ---------------------------
 ub="$tmp/unbound"; mkrepo "$ub" "git@github.com:a/unbound.git"
@@ -93,8 +105,12 @@ eq "null" "$(cd "$ub" && "$SUT" resolve | jq -r '.backend')" \
    "unbound repo reports backend null"
 
 # --- cache: unset clears the binding ------------------------------------
-(cd "$cr" && "$SUT" unset)
-eq "null" "$(cd "$cr" && "$SUT" resolve | jq -r '.backend')" "unset clears binding"
+# On a repo of its own, so the malformed-cache section below still runs
+# with two live bindings that a silent discard could take with it.
+un="$tmp/unsetrepo"; mkrepo "$un" "git@github.com:a/unsetme.git"
+(cd "$un" && "$SUT" set --backend github)
+(cd "$un" && "$SUT" unset)
+eq "null" "$(cd "$un" && "$SUT" resolve | jq -r '.backend')" "unset clears binding"
 
 # --- cache: toolmap round trip (global, not per-repo) -------------------
 printf '%s' '{"server":"atlassian","ops":{"create_issue":"mcp__atlassian__createJiraIssue"}}' \
@@ -113,20 +129,97 @@ eq "atlassian" "$(cd "$ub" && "$SUT" get-toolmap | jq -r '.server')" \
 eq "1" "$(find "$SDLC_HOME" -maxdepth 1 -type f | wc -l | tr -d ' ')" \
    "no temp files left behind after writes"
 
-# --- cache: malformed repos.json is treated as empty, not fatal ---------
-printf 'not json at all{{{' > "$SDLC_HOME/repos.json"
+# --- cache: a malformed repos.json is quarantined, not silently dropped -
+# Two repos are bound and a toolmap is set, so a mutating command that
+# read the cache as empty would take all of that with it. The corruption
+# is APPENDED rather than overwritten: the file still holds the bindings,
+# which is exactly what makes keeping a copy worth anything.
+eq "jira"   "$(cd "$cr"  && "$SUT" resolve | jq -r '.backend')" \
+   "first repo is bound before the corruption"
+eq "github" "$(cd "$cr2" && "$SUT" resolve | jq -r '.backend')" \
+   "second repo is bound before the corruption"
+printf 'not json at all{{{' >> "$SDLC_HOME/repos.json"
+
+# read paths stay non-fatal AND non-destructive
 out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
 eq "0"    "$rc" "malformed cache is not fatal"
 eq "null" "$(printf '%s' "$out" | jq -r '.backend')" "malformed cache reads as empty"
-(cd "$cr" && "$SUT" set --backend github) 2>/dev/null
+eq "false" "$([ -e "$SDLC_HOME/repos.json.bad" ] && echo true || echo false)" \
+   "resolve does not quarantine -- read paths write nothing"
+
+# the mutating path repairs the cache, loudly, and keeps the wreckage
+err=$( (cd "$cr" && "$SUT" set --backend github) 2>&1 >/dev/null ); rc=$?
+eq "0" "$rc" "a write over a malformed cache still exits 0"
 eq "github" "$(cd "$cr" && "$SUT" resolve | jq -r '.backend')" \
    "a write over a malformed cache repairs it"
+eq "true" "$([ -f "$SDLC_HOME/repos.json.bad" ] && echo true || echo false)" \
+   "the malformed cache is quarantined to repos.json.bad"
+printf '%s' "$err" | grep -q 'repos.json.bad' \
+  && ok "quarantine warns on stderr, naming the file" \
+  || bad "quarantine was silent (stderr: '$err')"
+
+# the collateral damage is real but bounded: everything the repair dropped
+# is still readable in the quarantined copy.
+eq "null" "$(cd "$cr2" && "$SUT" resolve | jq -r '.backend')" \
+   "the other repo's binding is gone from the repaired cache"
+eq "null" "$(cd "$cr" && "$SUT" get-toolmap)" \
+   "the toolmap is gone from the repaired cache"
+grep -q 'github.com/a/cache2' "$SDLC_HOME/repos.json.bad" \
+  && ok "the quarantined copy still holds the other repo's binding" \
+  || bad "quarantine discarded the other repo's binding"
+grep -q 'createJiraIssue' "$SDLC_HOME/repos.json.bad" \
+  && ok "the quarantined copy still holds the toolmap" \
+  || bad "quarantine discarded the toolmap"
 
 # --- cache: absent repos.json is treated as empty, not fatal ------------
 rm -rf "$SDLC_HOME"
 out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
 eq "0"    "$rc" "absent cache is not fatal"
 eq "null" "$(printf '%s' "$out" | jq -r '.backend')" "absent cache reads as empty"
+
+# --- cache: concurrent mutations serialize ------------------------------
+# The operating model is concurrent Claude sessions across git worktrees,
+# so two `set` calls genuinely overlap. Unguarded, the read-modify-write
+# lets the loser write back its stale snapshot and erase the winner's
+# binding: exit 0, nothing on stderr, no trace anywhere.
+rm -rf "$SDLC_HOME"
+n=0; while [ "$n" -lt 12 ]; do
+  n=$((n+1)); mkrepo "$tmp/race$n" "git@github.com:a/race$n.git"
+done
+n=0; while [ "$n" -lt 12 ]; do
+  n=$((n+1)); (cd "$tmp/race$n" && "$SUT" set --backend github) &
+done
+wait
+lost=""; n=0
+while [ "$n" -lt 12 ]; do
+  n=$((n+1))
+  [ "$(jq -r --arg k "github.com/a/race$n" '.repos[$k].backend // "gone"' \
+        "$SDLC_HOME/repos.json" 2>/dev/null)" = "github" ] || lost="$lost race$n"
+done
+[ -z "$lost" ] && ok "concurrent set calls do not clobber each other" \
+               || bad "concurrent set lost bindings:$lost"
+
+# a lock left behind by a killed session must not wedge the cache forever
+mkdir -p "$SDLC_HOME/.lock"; echo 1 > "$SDLC_HOME/.lock/started"   # 1970
+(cd "$cr" && tmo 20 "$SUT" set --backend github) >/dev/null 2>&1
+eq "0" "$?" "a stale lock is broken rather than wedging the cache"
+
+# a lock a live session holds is respected: bounded wait, then a loud
+# exit 1 instead of a silent overwrite. Costs the full retry budget.
+mkdir -p "$SDLC_HOME/.lock"; date +%s > "$SDLC_HOME/.lock/started"
+(cd "$cr" && tmo 30 "$SUT" set --backend jira --project OTHER) >/dev/null 2>&1
+eq "1" "$?" "a held lock makes set exit 1 rather than clobber"
+eq "github" "$(cd "$cr" && "$SUT" resolve | jq -r '.backend')" \
+   "the blocked set left the binding alone"
+rm -rf "$SDLC_HOME/.lock"
+
+# the lock is a mutating-path construct only: the spec requires the
+# use-github / bind-needed path to write NOTHING, lock dir included.
+rm -rf "$SDLC_HOME"
+(cd "$ub" && "$SUT" resolve >/dev/null 2>&1)
+(cd "$ub" && "$SUT" get-toolmap >/dev/null 2>&1)
+eq "false" "$([ -e "$SDLC_HOME" ] && echo true || echo false)" \
+   "resolve and get-toolmap create neither cache nor lock"
 
 # --- cache: set with a dangling flag exits 2, not an infinite loop -------
 # shift 2 is a no-op (not an error) when only one positional argument is
