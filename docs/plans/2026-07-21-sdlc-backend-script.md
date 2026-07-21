@@ -255,7 +255,10 @@ eq "atlassian" "$(cd "$ub" && "$SUT" get-toolmap | jq -r '.server')" \
    "toolmap is global across repos"
 
 # --- cache: atomic writes leave no temp droppings -----------------------
-eq "0" "$(find "$SDLC_HOME" -name '.repos.json.*' | wc -l)" \
+# repos.json must be the ONLY file in the cache dir after several writes;
+# matching a temp-name pattern instead would pass vacuously if the naming
+# scheme ever changed.
+eq "1" "$(find "$SDLC_HOME" -maxdepth 1 -type f | wc -l)" \
    "no temp files left behind after writes"
 
 # --- cache: malformed repos.json is treated as empty, not fatal ---------
@@ -295,7 +298,7 @@ cache_read() { # -> cache JSON; absent or malformed reads as empty
 cache_write() { # stdin: JSON -> atomically replace the cache
   local tmpf
   mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
-  tmpf=$(mktemp "$CACHE_DIR/.repos.json.XXXXXX") || die "cannot create temp file"
+  tmpf=$(mktemp -p "$CACHE_DIR") || die "cannot create temp file"
   if cat > "$tmpf" && jq -e . "$tmpf" >/dev/null 2>&1; then
     mv -f "$tmpf" "$CACHE"
   else
