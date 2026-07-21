@@ -65,7 +65,7 @@ cache_write() { # stdin: JSON -> atomically replace the cache
 }
 
 jira_mcp_configured() { # 0 if any configured MCP server name looks like JIRA
-  local names="" root common mainroot seen=""
+  local names="" root common mainroot seen="" r
   if [ -f "$HOME/.claude.json" ]; then
     names="$names
 $(jq -r '[(.mcpServers // {} | keys[]),
