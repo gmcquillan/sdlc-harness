@@ -309,6 +309,13 @@ cache_write() { # stdin: JSON -> atomically replace the cache
 cmd_set() {
   local backend="" project="" cloud_id="" site="" source="user-selected"
   while [ $# -gt 0 ]; do
+    # `shift 2` with only one argument left does NOT shift and returns
+    # nonzero, so an unguarded loop spins forever on `set --backend` with no
+    # value. A CLI must die with an exit code, never hang.
+    case "$1" in
+      --backend|--project|--cloud-id|--site|--source)
+        [ $# -ge 2 ] || die "set: $1 requires a value" 2 ;;
+    esac
     case "$1" in
       --backend)  backend="${2:-}";  shift 2 ;;
       --project)  project="${2:-}";  shift 2 ;;
