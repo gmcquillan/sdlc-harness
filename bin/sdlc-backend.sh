@@ -64,6 +64,22 @@ cache_write() { # stdin: JSON -> atomically replace the cache
   fi
 }
 
+jira_mcp_configured() { # 0 if any configured MCP server name looks like JIRA
+  local names="" root
+  if [ -f "$HOME/.claude.json" ]; then
+    names="$names
+$(jq -r '[(.mcpServers // {} | keys[]),
+          (.projects  // {} | to_entries[] | .value.mcpServers // {} | keys[])]
+         | .[]' "$HOME/.claude.json" 2>/dev/null)"
+  fi
+  root=$(git rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$root" ] && [ -f "$root/.mcp.json" ]; then
+    names="$names
+$(jq -r '.mcpServers // {} | keys[]' "$root/.mcp.json" 2>/dev/null)"
+  fi
+  printf '%s' "$names" | grep -qiE 'jira|atlassian'
+}
+
 cmd_set() {
   local backend="" project="" cloud_id="" site="" source="user-selected"
   while [ $# -gt 0 ]; do
@@ -112,9 +128,20 @@ cmd_set_toolmap() { # stdin: the tool map object
 cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // {}'; }
 
 cmd_resolve() {
-  local key; key=$(repo_key) || exit 3
-  cache_read | jq -c --arg k "$key" \
+  local key backend action
+  key=$(repo_key) || exit 3
+  backend=$(cache_read | jq -r --arg k "$key" '.repos[$k].backend // ""')
+  # A recorded binding always wins; the MCP sniff only decides what to do
+  # about a repo nobody has bound yet. No branch here writes to the cache.
+  case "$backend" in
+    jira)   action="use-jira" ;;
+    github) action="use-github" ;;
+    *)      if jira_mcp_configured; then action="bind-needed"
+            else action="use-github"; fi ;;
+  esac
+  cache_read | jq -c --arg k "$key" --arg a "$action" \
     '{repo:     $k,
+      action:   $a,
       backend:  (.repos[$k].backend  // null),
       project:  (.repos[$k].project  // null),
       cloud_id: (.repos[$k].cloud_id // null),

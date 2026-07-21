@@ -131,5 +131,65 @@ eq "0" "$?" "well-formed set still succeeds"
 eq "jira" "$(cd "$mv" && "$SUT" resolve | jq -r '.backend')" \
    "well-formed set still binds the backend"
 
+# --- action gating ------------------------------------------------------
+# HOME is $tmp, so $HOME/.claude.json is this suite's fixture.
+gate="$tmp/gate"; mkrepo "$gate" "git@github.com:a/gate.git"
+rm -rf "$SDLC_HOME" "$HOME/.claude.json"
+
+# (a) no JIRA-looking MCP anywhere -> use-github, and NOTHING is written
+out=$(cd "$gate" && "$SUT" resolve)
+eq "use-github" "$(printf '%s' "$out" | jq -r '.action')" \
+   "no MCP configured -> use-github"
+eq "false" "$([ -e "$SDLC_HOME/repos.json" ] && echo true || echo false)" \
+   "use-github path writes nothing to the cache"
+
+# the full resolve contract T3-T7 depend on
+for k in repo action backend project cloud_id site toolmap; do
+  [ "$(printf '%s' "$out" | jq "has(\"$k\")")" = "true" ] \
+    && ok "resolve emits key '$k'" || bad "resolve missing key '$k'"
+done
+
+# (b) an unrelated MCP server does not trip the heuristic
+printf '%s' '{"mcpServers":{"postgres":{"command":"x"}}}' > "$HOME/.claude.json"
+eq "use-github" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
+   "unrelated MCP server -> still use-github"
+
+# (c) a JIRA-looking server in ~/.claude.json + unbound repo -> bind-needed
+printf '%s' '{"mcpServers":{"Atlassian":{"command":"x"}}}' > "$HOME/.claude.json"
+eq "bind-needed" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
+   "atlassian server (case-insensitive) + unbound -> bind-needed"
+eq "false" "$([ -e "$SDLC_HOME/repos.json" ] && echo true || echo false)" \
+   "bind-needed path also writes nothing"
+
+# (d) detection also reads ~/.claude.json's per-project mcpServers
+printf '%s' '{"projects":{"/somewhere":{"mcpServers":{"jira-cloud":{"command":"x"}}}}}' \
+  > "$HOME/.claude.json"
+eq "bind-needed" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
+   "per-project mcpServers entry is detected"
+
+# (e) detection also reads a project-local .mcp.json at the repo root
+printf '%s' '{"mcpServers":{"postgres":{"command":"x"}}}' > "$HOME/.claude.json"
+printf '%s' '{"mcpServers":{"my-jira":{"command":"x"}}}' > "$gate/.mcp.json"
+eq "bind-needed" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
+   "project .mcp.json is detected"
+# ...and from a subdirectory of the repo, not just its root
+mkdir -p "$gate/sub"
+eq "bind-needed" "$(cd "$gate/sub" && "$SUT" resolve | jq -r '.action')" \
+   "project .mcp.json is found from a subdirectory"
+rm -f "$gate/.mcp.json"
+
+# (f) bound repo wins over config in both directions
+printf '%s' '{"mcpServers":{"atlassian":{"command":"x"}}}' > "$HOME/.claude.json"
+(cd "$gate" && "$SUT" set --backend jira --project PROJ)
+eq "use-jira" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
+   "bound to jira -> use-jira"
+(cd "$gate" && "$SUT" set --backend github)
+eq "use-github" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
+   "explicitly bound to github -> use-github despite MCP present"
+rm -f "$HOME/.claude.json"
+eq "use-jira" "$(cd "$cr" && "$SUT" set --backend jira >/dev/null 2>&1; \
+                 cd "$cr" && "$SUT" resolve | jq -r '.action')" \
+   "bound to jira -> use-jira even with no MCP configured"
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
