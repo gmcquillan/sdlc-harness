@@ -114,5 +114,22 @@ out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
 eq "0"    "$rc" "absent cache is not fatal"
 eq "null" "$(printf '%s' "$out" | jq -r '.backend')" "absent cache reads as empty"
 
+# --- cache: set with a dangling flag exits 2, not an infinite loop -------
+# shift 2 is a no-op (not an error) when only one positional argument is
+# left, so a trailing flag with no value must be caught explicitly or the
+# parser spins at 100% CPU forever. timeout turns a regression into a
+# FAIL (exit 124) instead of hanging this whole suite.
+mv="$tmp/missingval"; mkrepo "$mv" "git@github.com:a/missingval.git"
+(cd "$mv" && timeout 5 "$SUT" set --backend) >/dev/null 2>&1
+eq "2" "$?" "set --backend with no value exits 2, does not hang"
+
+(cd "$mv" && timeout 5 "$SUT" set --backend jira --project) >/dev/null 2>&1
+eq "2" "$?" "set --project with no value exits 2, does not hang"
+
+(cd "$mv" && timeout 5 "$SUT" set --backend jira --project PROJ) >/dev/null 2>&1
+eq "0" "$?" "well-formed set still succeeds"
+eq "jira" "$(cd "$mv" && "$SUT" resolve | jq -r '.backend')" \
+   "well-formed set still binds the backend"
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
