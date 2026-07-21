@@ -127,6 +127,21 @@ cmd_set_toolmap() { # stdin: the tool map object
 
 cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // {}'; }
 
+# Keys that look like JIRA projects but never are. Without this, UTF-8,
+# CVE-2024-1234 and RFC-3339 all read as project keys.
+SNIFF_DENYLIST='UTF|ISO|RFC|CVE|SHA|MD|AES|RSA|TLS|SSL|HTTP|UTC|GMT|X86|ARM|PEP|IPV'
+
+cmd_sniff() {
+  git rev-parse --git-dir >/dev/null 2>&1 || exit 3
+  { git log -n 500 --format='%s%n%b' 2>/dev/null
+    git branch -a --format='%(refname:short)' 2>/dev/null
+  } | grep -oE '\b[A-Z][A-Z0-9]{1,9}-[0-9]+\b' \
+    | sed 's/-[0-9]*$//' \
+    | grep -vxE "$SNIFF_DENYLIST" \
+    | sort | uniq -c | sort -rn \
+    | awk '$1 >= 3 { print $2, $1 }'
+}
+
 cmd_resolve() {
   local key backend action
   key=$(repo_key) || exit 3
@@ -151,6 +166,7 @@ cmd_resolve() {
 
 case "${1:-}" in
   resolve)      shift; cmd_resolve "$@" ;;
+  sniff)        shift; cmd_sniff "$@" ;;
   set)          shift; cmd_set "$@" ;;
   unset)        shift; cmd_unset "$@" ;;
   set-toolmap)  shift; cmd_set_toolmap "$@" ;;
