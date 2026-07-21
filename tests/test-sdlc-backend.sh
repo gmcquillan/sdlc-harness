@@ -57,5 +57,62 @@ outside="$tmp/notarepo"; mkdir -p "$outside"
 (cd "$outside" && "$SUT" resolve >/dev/null 2>&1); rc=$?
 eq "3" "$rc" "resolve exits 3 outside a git repo"
 
+# --- cache: set -> resolve round trip -----------------------------------
+cr="$tmp/cacherepo"; mkrepo "$cr" "git@github.com:a/cache.git"
+(cd "$cr" && "$SUT" set --backend jira --project PROJ \
+   --cloud-id CID --site https://acme.atlassian.net --source git-sniff-confirmed)
+out=$(cd "$cr" && "$SUT" resolve)
+eq "jira"  "$(printf '%s' "$out" | jq -r '.backend')"  "set --backend jira round-trips"
+eq "PROJ"  "$(printf '%s' "$out" | jq -r '.project')"  "set --project round-trips"
+eq "CID"   "$(printf '%s' "$out" | jq -r '.cloud_id')" "set --cloud-id round-trips"
+eq "https://acme.atlassian.net" "$(printf '%s' "$out" | jq -r '.site')" \
+   "set --site round-trips"
+
+# the cache carries the co-owned schema T2's bind procedure reads back
+eq "1" "$(jq -r '.version' "$SDLC_HOME/repos.json")" "cache records version 1"
+eq "git-sniff-confirmed" \
+   "$(jq -r '.repos["github.com/a/cache"].source' "$SDLC_HOME/repos.json")" \
+   "cache records bind source"
+
+# --- cache: unbound repo reports backend null ---------------------------
+ub="$tmp/unbound"; mkrepo "$ub" "git@github.com:a/unbound.git"
+eq "null" "$(cd "$ub" && "$SUT" resolve | jq -r '.backend')" \
+   "unbound repo reports backend null"
+
+# --- cache: unset clears the binding ------------------------------------
+(cd "$cr" && "$SUT" unset)
+eq "null" "$(cd "$cr" && "$SUT" resolve | jq -r '.backend')" "unset clears binding"
+
+# --- cache: toolmap round trip (global, not per-repo) -------------------
+printf '%s' '{"server":"atlassian","ops":{"create_issue":"mcp__atlassian__createJiraIssue"}}' \
+  | (cd "$cr" && "$SUT" set-toolmap)
+eq "mcp__atlassian__createJiraIssue" \
+   "$(cd "$cr" && "$SUT" get-toolmap | jq -r '.ops.create_issue')" \
+   "toolmap round-trips"
+eq "atlassian" "$(cd "$ub" && "$SUT" get-toolmap | jq -r '.server')" \
+   "toolmap is global across repos"
+
+# --- cache: atomic writes leave no temp droppings -----------------------
+# repos.json must be the ONLY file in the cache dir after several writes;
+# matching a temp-name pattern instead would pass vacuously if the naming
+# scheme ever changed.
+eq "1" "$(find "$SDLC_HOME" -maxdepth 1 -type f | wc -l)" \
+   "no temp files left behind after writes"
+
+# --- cache: malformed repos.json is treated as empty, not fatal ---------
+printf 'not json at all{{{' > "$SDLC_HOME/repos.json"
+out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
+eq "0"    "$rc" "malformed cache is not fatal"
+eq "null" "$(printf '%s' "$out" | jq -r '.backend')" "malformed cache reads as empty"
+(cd "$cr" && "$SUT" set --backend github) 2>/dev/null
+eq "github" "$(cd "$cr" && "$SUT" resolve | jq -r '.backend')" \
+   "a write over a malformed cache repairs it"
+
+# --- cache: absent repos.json is treated as empty, not fatal ------------
+rm -rf "$SDLC_HOME"
+out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
+eq "0"    "$rc" "absent cache is not fatal"
+eq "null" "$(printf '%s' "$out" | jq -r '.backend')" "absent cache reads as empty"
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

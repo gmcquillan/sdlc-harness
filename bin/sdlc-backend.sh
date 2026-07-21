@@ -45,13 +45,85 @@ repo_key() { # -> normalized key on stdout; return 3 outside a git repo
   fi
 }
 
+cache_read() { # -> cache JSON; absent or malformed reads as empty
+  if [ -f "$CACHE" ] && jq -e . "$CACHE" >/dev/null 2>&1; then
+    cat "$CACHE"
+  else
+    printf '{"version":1,"repos":{}}\n'
+  fi
+}
+
+cache_write() { # stdin: JSON -> atomically replace the cache
+  local tmpf
+  mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
+  tmpf=$(mktemp -p "$CACHE_DIR") || die "cannot create temp file"
+  if cat > "$tmpf" && jq -e . "$tmpf" >/dev/null 2>&1; then
+    mv -f "$tmpf" "$CACHE"
+  else
+    rm -f "$tmpf"; die "refusing to write malformed cache"
+  fi
+}
+
+cmd_set() {
+  local backend="" project="" cloud_id="" site="" source="user-selected"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --backend)  backend="${2:-}";  shift 2 ;;
+      --project)  project="${2:-}";  shift 2 ;;
+      --cloud-id) cloud_id="${2:-}"; shift 2 ;;
+      --site)     site="${2:-}";     shift 2 ;;
+      --source)   source="${2:-}";   shift 2 ;;
+      *) die "set: unknown flag: $1" 2 ;;
+    esac
+  done
+  case "$backend" in
+    github|jira) ;;
+    *) die "set: --backend must be github or jira" 2 ;;
+  esac
+  local key; key=$(repo_key) || exit 3
+  cache_read | jq \
+    --arg k "$key" --arg b "$backend" --arg p "$project" --arg c "$cloud_id" \
+    --arg s "$site" --arg src "$source" --arg d "$(date +%F)" \
+    '.version = 1
+     | .repos = (.repos // {})
+     | .repos[$k] = ({backend: $b, bound_at: $d, source: $src}
+         + (if $p == "" then {} else {project:  $p} end)
+         + (if $c == "" then {} else {cloud_id: $c} end)
+         + (if $s == "" then {} else {site:     $s} end))' \
+    | cache_write
+}
+
+cmd_unset() {
+  local key; key=$(repo_key) || exit 3
+  cache_read | jq --arg k "$key" '.version = 1 | .repos = ((.repos // {}) | del(.[$k]))' \
+    | cache_write
+}
+
+cmd_set_toolmap() { # stdin: the tool map object
+  local tm; tm=$(cat)
+  printf '%s' "$tm" | jq -e . >/dev/null 2>&1 || die "set-toolmap: stdin is not valid JSON" 2
+  cache_read | jq --argjson tm "$tm" '.version = 1 | .jira_toolmap = $tm' | cache_write
+}
+
+cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // {}'; }
+
 cmd_resolve() {
   local key; key=$(repo_key) || exit 3
-  jq -cn --arg k "$key" '{repo:$k}'
+  cache_read | jq -c --arg k "$key" \
+    '{repo:     $k,
+      backend:  (.repos[$k].backend  // null),
+      project:  (.repos[$k].project  // null),
+      cloud_id: (.repos[$k].cloud_id // null),
+      site:     (.repos[$k].site     // null),
+      toolmap:  (.jira_toolmap       // null)}'
 }
 
 case "${1:-}" in
-  resolve) shift; cmd_resolve "$@" ;;
+  resolve)      shift; cmd_resolve "$@" ;;
+  set)          shift; cmd_set "$@" ;;
+  unset)        shift; cmd_unset "$@" ;;
+  set-toolmap)  shift; cmd_set_toolmap "$@" ;;
+  get-toolmap)  shift; cmd_get_toolmap "$@" ;;
   "") die "usage: sdlc-backend.sh <resolve|sniff|set|unset|set-toolmap|get-toolmap>" 2 ;;
   *) die "unknown command: $1" 2 ;;
 esac
