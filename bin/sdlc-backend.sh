@@ -111,6 +111,17 @@ cmd_set() {
     github|jira) ;;
     *) die "set: --backend must be github or jira" 2 ;;
   esac
+  # A jira binding without a project cannot build a ticket_url or file an
+  # issue, and nothing downstream re-prompts — so refuse to record one.
+  case "$backend" in
+    jira) [ -n "$project" ] || die "set: --backend jira requires --project" 2 ;;
+  esac
+  # Closed vocabulary, co-owned with T2's bind procedure: an unrecognized
+  # value would otherwise be written verbatim and read back as neither.
+  case "$source" in
+    git-sniff-confirmed|user-selected) ;;
+    *) die "set: --source must be git-sniff-confirmed or user-selected" 2 ;;
+  esac
   local key; key=$(repo_key) || exit 3
   cache_read | jq \
     --arg k "$key" --arg b "$backend" --arg p "$project" --arg c "$cloud_id" \

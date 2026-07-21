@@ -187,7 +187,7 @@ eq "use-jira" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
 eq "use-github" "$(cd "$gate" && "$SUT" resolve | jq -r '.action')" \
    "explicitly bound to github -> use-github despite MCP present"
 rm -f "$HOME/.claude.json"
-eq "use-jira" "$(cd "$cr" && "$SUT" set --backend jira >/dev/null 2>&1; \
+eq "use-jira" "$(cd "$cr" && "$SUT" set --backend jira --project PROJ >/dev/null 2>&1; \
                  cd "$cr" && "$SUT" resolve | jq -r '.action')" \
    "bound to jira -> use-jira even with no MCP configured"
 
@@ -313,6 +313,22 @@ eq "2" "$?" "unknown command exits 2"
 eq "2" "$?" "set --backend bogus (invalid value) exits 2"
 (cd "$errrepo" && "$SUT" set --nope x >/dev/null 2>&1)
 eq "2" "$?" "set --nope (unknown flag) exits 2"
+# A jira binding with no project is unusable: ticket_url and every create
+# call need it, and nothing downstream ever asks for it a second time.
+(cd "$errrepo" && "$SUT" set --backend jira >/dev/null 2>&1)
+eq "2" "$?" "set --backend jira without --project exits 2"
+(cd "$errrepo" && "$SUT" set --backend jira --project "" >/dev/null 2>&1)
+eq "2" "$?" "set --backend jira --project '' exits 2"
+(cd "$errrepo" && "$SUT" set --backend github >/dev/null 2>&1)
+eq "0" "$?" "set --backend github still needs no --project"
+# --source is a closed vocabulary co-owned with T2; a typo must not be
+# written verbatim into the cache.
+for s in git-sniff-confirmed user-selected; do
+  (cd "$errrepo" && "$SUT" set --backend jira --project P --source "$s" >/dev/null 2>&1)
+  eq "0" "$?" "set --source $s is accepted"
+done
+(cd "$errrepo" && "$SUT" set --backend jira --project P --source typo >/dev/null 2>&1)
+eq "2" "$?" "set --source with an undefined value exits 2"
 (cd "$errrepo" && printf 'not json' | "$SUT" set-toolmap >/dev/null 2>&1)
 eq "2" "$?" "set-toolmap with invalid JSON on stdin exits 2"
 (cd "$outside" && "$SUT" set --backend github >/dev/null 2>&1)
