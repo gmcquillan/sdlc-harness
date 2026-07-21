@@ -265,11 +265,20 @@ eq "0"          "$rc" "malformed ~/.claude.json exits 0"
 eq "use-github" "$(printf '%s' "$out" | jq -r '.action')" \
    "malformed ~/.claude.json -> use-github"
 
+# Give the file VALID content naming a jira server: readable, it would yield
+# bind-needed, so this assertion genuinely distinguishes "permission denied"
+# from "parsed fine" instead of repeating the malformed case above. Root
+# ignores mode bits, so skip there rather than report a false pass.
+printf '%s' '{"mcpServers":{"atlassian":{"command":"x"}}}' > "$HOME/.claude.json"
 chmod 000 "$HOME/.claude.json"
-out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
-eq "0"          "$rc" "unreadable ~/.claude.json exits 0"
-eq "use-github" "$(printf '%s' "$out" | jq -r '.action')" \
-   "unreadable ~/.claude.json -> use-github"
+if [ "$(id -u)" = "0" ]; then
+  ok "unreadable ~/.claude.json (skipped: root ignores permission bits)"
+else
+  out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
+  eq "0"          "$rc" "unreadable ~/.claude.json exits 0"
+  eq "use-github" "$(printf '%s' "$out" | jq -r '.action')" \
+     "unreadable ~/.claude.json -> use-github, not bind-needed"
+fi
 chmod 644 "$HOME/.claude.json"
 rm -f "$HOME/.claude.json"
 
