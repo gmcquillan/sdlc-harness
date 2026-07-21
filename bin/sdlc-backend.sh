@@ -56,7 +56,7 @@ cache_read() { # -> cache JSON; absent or malformed reads as empty
 cache_write() { # stdin: JSON -> atomically replace the cache
   local tmpf
   mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
-  tmpf=$(mktemp -p "$CACHE_DIR") || die "cannot create temp file"
+  tmpf=$(mktemp "$CACHE_DIR/repos.XXXXXX") || die "cannot create temp file"
   if cat > "$tmpf" && jq -e . "$tmpf" >/dev/null 2>&1; then
     mv -f "$tmpf" "$CACHE"
   else
@@ -65,18 +65,29 @@ cache_write() { # stdin: JSON -> atomically replace the cache
 }
 
 jira_mcp_configured() { # 0 if any configured MCP server name looks like JIRA
-  local names="" root
+  local names="" root common mainroot seen=""
   if [ -f "$HOME/.claude.json" ]; then
     names="$names
 $(jq -r '[(.mcpServers // {} | keys[]),
           (.projects  // {} | to_entries[] | .value.mcpServers // {} | keys[])]
          | .[]' "$HOME/.claude.json" 2>/dev/null)"
   fi
+  # Check .mcp.json at both the current worktree root and the main
+  # repository's root — repo_key() collapses every worktree to the main
+  # repo, and this script spends most of its life inside worktrees, so a
+  # signal only visible from the main checkout must not be missed here.
   root=$(git rev-parse --show-toplevel 2>/dev/null)
-  if [ -n "$root" ] && [ -f "$root/.mcp.json" ]; then
-    names="$names
-$(jq -r '.mcpServers // {} | keys[]' "$root/.mcp.json" 2>/dev/null)"
-  fi
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+  mainroot=$([ -n "$common" ] && (cd "$common/.." 2>/dev/null && pwd -P))
+  for r in "$root" "$mainroot"; do
+    [ -n "$r" ] || continue
+    case "$seen" in *"|$r|"*) continue ;; esac
+    seen="$seen|$r|"
+    if [ -f "$r/.mcp.json" ]; then
+      names="$names
+$(jq -r '.mcpServers // {} | keys[]' "$r/.mcp.json" 2>/dev/null)"
+    fi
+  done
   printf '%s' "$names" | grep -qiE 'jira|atlassian'
 }
 
@@ -125,7 +136,7 @@ cmd_set_toolmap() { # stdin: the tool map object
   cache_read | jq --argjson tm "$tm" '.version = 1 | .jira_toolmap = $tm' | cache_write
 }
 
-cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // {}'; }
+cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // null'; }
 
 # Keys that look like JIRA projects but never are. Without this, UTF-8,
 # CVE-2024-1234 and RFC-3339 all read as project keys.
