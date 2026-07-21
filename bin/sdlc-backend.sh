@@ -54,6 +54,13 @@ normalize_remote() { # <url> -> host/owner/name
   u="${u#*://}"
   host="${u%%/*}"; rest="${u#*/}"
   host="${host#*@}"          # drop userinfo, never touching the path
+  host="${host%%:*}"         # ssh://host:22/ and host:2222/ are the same host
+  # Hostnames are case-insensitive (RFC 4343), so GitHub.com and github.com
+  # must key one repo. The owner/name path is deliberately NOT lowercased:
+  # GitHub happens to be case-insensitive there, but other git hosts are
+  # not, and silently merging two distinct repos is worse than keying one
+  # repo twice.
+  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
   u="$host/$rest"
   u="${u%.git}"
   while [ "${u%/}" != "$u" ]; do u="${u%/}"; done
@@ -178,6 +185,7 @@ cmd_set() {
 }
 
 cmd_unset() {
+  [ $# -eq 0 ] || die "unset: unexpected argument: $1" 2
   local key; key=$(repo_key) || exit 3
   lock_acquire; cache_quarantine
   cache_read | jq --arg k "$key" '.version = 1 | .repos = ((.repos // {}) | del(.[$k]))' \
@@ -191,13 +199,17 @@ cmd_set_toolmap() { # stdin: the tool map object
   cache_read | jq --argjson tm "$tm" '.version = 1 | .jira_toolmap = $tm' | cache_write
 }
 
-cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // null'; }
+cmd_get_toolmap() {
+  [ $# -eq 0 ] || die "get-toolmap: unexpected argument: $1" 2
+  cache_read | jq -c '.jira_toolmap // null'
+}
 
 # Keys that look like JIRA projects but never are. Without this, UTF-8,
 # CVE-2024-1234 and RFC-3339 all read as project keys.
 SNIFF_DENYLIST='UTF|ISO|RFC|CVE|SHA|MD|AES|RSA|TLS|SSL|HTTP|UTC|GMT|X86|ARM|PEP|IPV'
 
 cmd_sniff() {
+  [ $# -eq 0 ] || die "sniff: unexpected argument: $1" 2
   git rev-parse --git-dir >/dev/null 2>&1 || exit 3
   { git log -n 500 --format='%s%n%b' 2>/dev/null
     git branch -a --format='%(refname:short)' 2>/dev/null
@@ -209,9 +221,13 @@ cmd_sniff() {
 }
 
 cmd_resolve() {
-  local key backend action
+  [ $# -eq 0 ] || die "resolve: unexpected argument: $1" 2
+  local key cache backend action
   key=$(repo_key) || exit 3
-  backend=$(cache_read | jq -r --arg k "$key" '.repos[$k].backend // ""')
+  # One read for both jq passes: re-reading could straddle another session's
+  # write and report an action that disagrees with the fields beside it.
+  cache=$(cache_read)
+  backend=$(printf '%s' "$cache" | jq -r --arg k "$key" '.repos[$k].backend // ""')
   # A recorded binding always wins; the MCP sniff only decides what to do
   # about a repo nobody has bound yet. No branch here writes to the cache.
   case "$backend" in
@@ -220,7 +236,7 @@ cmd_resolve() {
     *)      if jira_mcp_configured; then action="bind-needed"
             else action="use-github"; fi ;;
   esac
-  cache_read | jq -c --arg k "$key" --arg a "$action" \
+  printf '%s' "$cache" | jq -c --arg k "$key" --arg a "$action" \
     '{repo:     $k,
       action:   $a,
       backend:  (.repos[$k].backend  // null),

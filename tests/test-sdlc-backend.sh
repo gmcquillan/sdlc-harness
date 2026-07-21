@@ -38,14 +38,25 @@ mkrepo() { # dir [origin-url] -> initialized repo with one commit
 
 # --- repo key: four remote URL forms collapse to one key ----------------
 i=0
+# The last two: host case and a :port are properties of how you reached the
+# host, never of which repo it is.
 for url in "git@github.com:a/b.git" \
            "https://github.com/a/b" \
            "https://github.com/a/b/" \
-           "ssh://git@github.com/a/b.git"; do
+           "ssh://git@github.com/a/b.git" \
+           "GIT@GitHub.com:a/b.git" \
+           "ssh://git@github.com:22/a/b.git"; do
   i=$((i+1)); r="$tmp/form$i"; mkrepo "$r" "$url"
   got=$(cd "$r" && "$SUT" resolve | jq -r '.repo')
   eq "github.com/a/b" "$got" "remote form $i normalizes ($url)"
 done
+
+# ...but owner/name keeps its case on purpose: GitHub is case-insensitive
+# there, other git hosts are not, and silently merging two genuinely
+# distinct repos is worse than keying one repo twice.
+cp="$tmp/casepath"; mkrepo "$cp" "git@github.com:A/B.git"
+eq "github.com/A/B" "$(cd "$cp" && "$SUT" resolve | jq -r '.repo')" \
+   "owner/name case is preserved in the key"
 
 # --- repo key: worktree collapses to its main repo ----------------------
 wtmain="$tmp/wtmain"; mkrepo "$wtmain" "git@github.com:a/b.git"
@@ -342,6 +353,26 @@ sn_clean=$(cd "$clean" && "$SUT" sniff); rc=$?
 eq "0"  "$rc" "sniff exits 0 on a repo with no candidates"
 eq ""   "$sn_clean" "sniff prints nothing when there are no candidates"
 
+# --- sniff: the history window is bounded at 500 commits ----------------
+# 505 OLD commits with 3 NEW ones on top: the window covers the 3 newest
+# plus 497 OLD, so dropping -n 500 (or typoing it to -n 5000) reports OLD
+# 505 instead and fails here. Built with commit-tree because 508 `git
+# commit` calls cost a minute of fsync, while this costs under a second.
+win="$tmp/window"; mkrepo "$win" "git@github.com:a/window.git"
+wp=$(git -C "$win" rev-parse HEAD); wt=$(git -C "$win" rev-parse 'HEAD^{tree}')
+n=0; while [ "$n" -lt 505 ]; do
+  n=$((n+1)); wp=$(git -C "$win" commit-tree -p "$wp" -m "OLD-$n x" "$wt")
+done
+n=0; while [ "$n" -lt 3 ]; do
+  n=$((n+1)); wp=$(git -C "$win" commit-tree -p "$wp" -m "NEW-$n x" "$wt")
+done
+git -C "$win" update-ref HEAD "$wp"
+win_out=$(cd "$win" && "$SUT" sniff)
+eq "NEW 3"   "$(printf '%s\n' "$win_out" | grep '^NEW ')" \
+   "sniff sees the newest commits"
+eq "OLD 497" "$(printf '%s\n' "$win_out" | grep '^OLD ')" \
+   "sniff scans exactly the newest 500 commits, not the whole history"
+
 # sniff respects the git-repo guard
 (cd "$outside" && "$SUT" sniff >/dev/null 2>&1); rc=$?
 eq "3" "$rc" "sniff exits 3 outside a git repo"
@@ -438,6 +469,16 @@ done
 eq "2" "$?" "set --source with an undefined value exits 2"
 (cd "$errrepo" && printf 'not json' | "$SUT" set-toolmap >/dev/null 2>&1)
 eq "2" "$?" "set-toolmap with invalid JSON on stdin exits 2"
+# The callers are model-generated prose, so a typo'd flag must be loud
+# rather than silently ignored -- exactly as `set` already treats one.
+(cd "$errrepo" && "$SUT" resolve --bogus extra >/dev/null 2>&1)
+eq "2" "$?" "resolve with extra arguments exits 2"
+(cd "$errrepo" && "$SUT" unset --bogus >/dev/null 2>&1)
+eq "2" "$?" "unset with extra arguments exits 2"
+(cd "$errrepo" && "$SUT" sniff --bogus >/dev/null 2>&1)
+eq "2" "$?" "sniff with extra arguments exits 2"
+(cd "$errrepo" && "$SUT" get-toolmap --bogus >/dev/null 2>&1)
+eq "2" "$?" "get-toolmap with extra arguments exits 2"
 (cd "$outside" && "$SUT" set --backend github >/dev/null 2>&1)
 eq "3" "$?" "set outside a git repo exits 3"
 (cd "$outside" && "$SUT" unset >/dev/null 2>&1)
