@@ -675,7 +675,7 @@ lookalikes (UTF-8, CVE-2024-1234, RFC-3339) and anything under 3 hits."
 | Absent or malformed `repos.json` → empty, not fatal | 2 |
 | `tests/test-sdlc-backend.sh` covers every criterion and passes | 1–4 |
 
-**2. Placeholder scan** — no TBD/TODO, no "add error handling", no "similar to Task N"; every code step carries complete runnable code.
+**2. Placeholder scan** — no unfinished-work markers, no vague "add error handling", no "similar to Task N" back-references; every code step carries complete runnable code.
 
 **3. Type consistency** — `repo_key`, `normalize_remote`, `cache_read`, `cache_write`, `jira_mcp_configured`, `cmd_resolve`, `cmd_set`, `cmd_unset`, `cmd_set_toolmap`, `cmd_get_toolmap`, `cmd_sniff` are spelled identically at every definition and call site. `cmd_resolve` is written three times (Tasks 1, 2, 3), each a stated full replacement rather than a diff, so a worker reading only one task still gets a coherent function. The `resolve` key set and `action` vocabulary match the Global Constraints and the spec table exactly.
 
