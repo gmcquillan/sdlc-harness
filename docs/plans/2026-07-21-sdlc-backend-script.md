@@ -6,7 +6,7 @@
 
 **Architecture:** One executable bash script (`bin/sdlc-backend.sh`) with a subcommand dispatcher, plus one test script. All JSON in and out goes through `jq` (already a hard README requirement). The cache is a single global file whose location is `${SDLC_HOME:-$HOME/.claude/sdlc}/repos.json`, so tests point `SDLC_HOME` at a temp dir and never touch the developer's real cache. Every write is temp-file + `mv`.
 
-**Tech Stack:** Bash (`set -u` only, matching every other script in this repo), `jq`, `git`, GNU `grep`/`sed`/`awk`. No test framework — the script prints `passed=N failed=M` and exits non-zero on failure, like every other `tests/test-*.sh`.
+**Tech Stack:** Bash (`set -u` only, matching every other script in this repo), `jq`, `git`, and POSIX-portable `grep`/`sed`/`awk`/`tr`/`mktemp`. **BSD/macOS is a hard target:** no GNU-only flags (no `mktemp -p`, no `sed -i ''` divergence), and no util-linux-only tools (no `flock` — the cache lock is an atomic `mkdir` instead). `\b` in `grep -E` is fine: it is a documented BSD `re_format(7)` extension and `hooks/lint-before-push.sh` already relies on it. No test framework — the script prints `passed=N failed=M` and exits non-zero on failure, like every other `tests/test-*.sh`.
 
 ## Global Constraints
 
@@ -149,6 +149,13 @@ normalize_remote() { # <url> -> host/owner/name
   u="${u#*://}"
   host="${u%%/*}"; rest="${u#*/}"
   host="${host#*@}"          # drop userinfo, never touching the path
+  host="${host%%:*}"         # ssh://host:22/ and host:2222/ are the same host
+  # Hostnames are case-insensitive (RFC 4343), so GitHub.com and github.com
+  # must key one repo. The owner/name path is deliberately NOT lowercased:
+  # GitHub happens to be case-insensitive there, but other git hosts are
+  # not, and silently merging two distinct repos is worse than keying one
+  # repo twice.
+  host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
   u="$host/$rest"
   u="${u%.git}"
   while [ "${u%/}" != "$u" ]; do u="${u%/}"; done
@@ -284,14 +291,60 @@ Expected: FAIL — `sdlc-backend: unknown command: set` on stderr, and the `.bac
 
 - [ ] **Step 3: Write minimal implementation**
 
+Declare the lock path next to `CACHE` at the top of the script:
+
+```bash
+LOCK="$CACHE_DIR/.lock"
+```
+
 Add these helpers to `bin/sdlc-backend.sh` after `repo_key()`:
 
 ```bash
+lock_release() { rm -rf "$LOCK"; }
+
+lock_acquire() { # serialize the read-modify-write over the whole cache
+  # Concurrent sessions across worktrees are this harness's normal mode, and
+  # an unguarded read-modify-write lets the loser write back its stale
+  # snapshot, erasing the winner's binding with exit 0 and no stderr.
+  # flock is util-linux only; mkdir is atomic everywhere.
+  mkdir -p "$CACHE_DIR" || die "cannot create $CACHE_DIR"
+  local i=0 now started
+  while ! mkdir "$LOCK" 2>/dev/null; do
+    i=$((i+1))
+    now=$(date +%s); started=$(cat "$LOCK/started" 2>/dev/null)
+    case "$started" in
+      # A session killed between the mkdir and the stamp leaves no stamp at
+      # all; give the holder a beat to write one before calling it debris.
+      ''|*[!0-9]*) [ "$i" -ge 10 ] && { lock_release; continue; } ;;
+      # A killed session must not wedge every future one, so break a lock
+      # far older than any real read-modify-write.
+      *) [ "$((now - started))" -ge 30 ] && { lock_release; continue; } ;;
+    esac
+    [ "$i" -lt 50 ] || die "cache is locked by another session; remove $LOCK if stale"
+    sleep 0.1
+  done
+  # Released on a kill mid-operation too, or the next session inherits a
+  # lock it has to wait 30s to break.
+  trap 'lock_release' EXIT HUP INT TERM
+  date +%s > "$LOCK/started"
+}
+
 cache_read() { # -> cache JSON; absent or malformed reads as empty
   if [ -f "$CACHE" ] && jq -e . "$CACHE" >/dev/null 2>&1; then
     cat "$CACHE"
   else
     printf '{"version":1,"repos":{}}\n'
+  fi
+}
+
+cache_quarantine() { # inside the lock, before any read-modify-write
+  # cache_read reads malformed JSON as empty, which is right for resolve but
+  # ruinous here: the next write would discard every other repo's binding
+  # and the toolmap without a word. Keep the wreckage and say where it went.
+  # Still not fatal — that is a spec requirement.
+  if [ -f "$CACHE" ] && ! jq -e . "$CACHE" >/dev/null 2>&1; then
+    mv -f "$CACHE" "$CACHE.bad" || die "cannot quarantine malformed $CACHE"
+    printf 'sdlc-backend: malformed cache quarantined to %s\n' "$CACHE.bad" >&2
   fi
 }
 
@@ -332,7 +385,19 @@ cmd_set() {
     github|jira) ;;
     *) die "set: --backend must be github or jira" 2 ;;
   esac
+  # A jira binding without a project cannot build a ticket_url or file an
+  # issue, and nothing downstream re-prompts — so refuse to record one.
+  case "$backend" in
+    jira) [ -n "$project" ] || die "set: --backend jira requires --project" 2 ;;
+  esac
+  # Closed vocabulary, co-owned with T2's bind procedure: an unrecognized
+  # value would otherwise be written verbatim and read back as neither.
+  case "$source" in
+    git-sniff-confirmed|user-selected) ;;
+    *) die "set: --source must be git-sniff-confirmed or user-selected" 2 ;;
+  esac
   local key; key=$(repo_key) || exit 3
+  lock_acquire; cache_quarantine
   cache_read | jq \
     --arg k "$key" --arg b "$backend" --arg p "$project" --arg c "$cloud_id" \
     --arg s "$site" --arg src "$source" --arg d "$(date +%F)" \
@@ -346,7 +411,9 @@ cmd_set() {
 }
 
 cmd_unset() {
+  [ $# -eq 0 ] || die "unset: unexpected argument: $1" 2
   local key; key=$(repo_key) || exit 3
+  lock_acquire; cache_quarantine
   cache_read | jq --arg k "$key" '.version = 1 | .repos = ((.repos // {}) | del(.[$k]))' \
     | cache_write
 }
@@ -354,11 +421,22 @@ cmd_unset() {
 cmd_set_toolmap() { # stdin: the tool map object
   local tm; tm=$(cat)
   printf '%s' "$tm" | jq -e . >/dev/null 2>&1 || die "set-toolmap: stdin is not valid JSON" 2
+  lock_acquire; cache_quarantine
   cache_read | jq --argjson tm "$tm" '.version = 1 | .jira_toolmap = $tm' | cache_write
 }
 
-cmd_get_toolmap() { cache_read | jq -c '.jira_toolmap // null'; }
+cmd_get_toolmap() {
+  [ $# -eq 0 ] || die "get-toolmap: unexpected argument: $1" 2
+  cache_read | jq -c '.jira_toolmap // null'
+}
 ```
+
+The lock and the quarantine are on the three mutating commands only. `resolve`
+and `get-toolmap` must stay write-free: the spec's `use-github`/`bind-needed`
+path performs no cache write at all, so neither may create the lock directory
+or rename a malformed cache. Callers are model-generated prose, so every
+argument-free subcommand rejects a stray argument with exit 2 rather than
+silently ignoring a typo'd flag.
 
 Extend the dispatcher `case` to:
 
@@ -497,7 +575,7 @@ Add to `bin/sdlc-backend.sh` after `cache_read`/`cache_write`:
 
 ```bash
 jira_mcp_configured() { # 0 if any configured MCP server name looks like JIRA
-  local names="" root common mainroot seen=""
+  local names="" root common mainroot seen="" r
   if [ -f "$HOME/.claude.json" ]; then
     names="$names
 $(jq -r '[(.mcpServers // {} | keys[]),
@@ -528,9 +606,13 @@ Replace `cmd_resolve` with the final version:
 
 ```bash
 cmd_resolve() {
-  local key backend action
+  [ $# -eq 0 ] || die "resolve: unexpected argument: $1" 2
+  local key cache backend action
   key=$(repo_key) || exit 3
-  backend=$(cache_read | jq -r --arg k "$key" '.repos[$k].backend // ""')
+  # One read for both jq passes: re-reading could straddle another session's
+  # write and report an action that disagrees with the fields beside it.
+  cache=$(cache_read)
+  backend=$(printf '%s' "$cache" | jq -r --arg k "$key" '.repos[$k].backend // ""')
   # A recorded binding always wins; the MCP sniff only decides what to do
   # about a repo nobody has bound yet. No branch here writes to the cache.
   case "$backend" in
@@ -539,7 +621,7 @@ cmd_resolve() {
     *)      if jira_mcp_configured; then action="bind-needed"
             else action="use-github"; fi ;;
   esac
-  cache_read | jq -c --arg k "$key" --arg a "$action" \
+  printf '%s' "$cache" | jq -c --arg k "$key" --arg a "$action" \
     '{repo:     $k,
       action:   $a,
       backend:  (.repos[$k].backend  // null),
@@ -649,6 +731,7 @@ Add to `bin/sdlc-backend.sh`:
 SNIFF_DENYLIST='UTF|ISO|RFC|CVE|SHA|MD|AES|RSA|TLS|SSL|HTTP|UTC|GMT|X86|ARM|PEP|IPV'
 
 cmd_sniff() {
+  [ $# -eq 0 ] || die "sniff: unexpected argument: $1" 2
   git rev-parse --git-dir >/dev/null 2>&1 || exit 3
   { git log -n 500 --format='%s%n%b' 2>/dev/null
     git branch -a --format='%(refname:short)' 2>/dev/null
@@ -705,4 +788,5 @@ lookalikes (UTF-8, CVE-2024-1234, RFC-3339) and anything under 3 hits."
 
 **Deliberate deviations from the spec, both narrowing:**
 - `cache_write` validates its stdin is JSON before `mv`. The spec only requires atomicity; refusing to install a malformed cache is strictly safer and is what makes "a write over a malformed cache repairs it" testable.
-- `cmd_set` accepts an undocumented `--source` flag. The spec's cache schema has a `source` field with two values (`git-sniff-confirmed`, `user-selected`) and no other way to set it; T2's bind procedure needs to write it.
+- `cmd_set` accepts an undocumented `--source` flag, validated against exactly the spec's two values (`git-sniff-confirmed`, `user-selected`). The spec's cache schema has a `source` field and no other way to set it; T2's bind procedure needs to write it.
+- The three mutating subcommands take a `mkdir` mutex and quarantine a malformed cache to `repos.json.bad` before writing. The spec requires only atomicity, but concurrent worktree sessions are this harness's normal mode: without the lock the loser writes back its stale snapshot, and without the quarantine the first write over corrupt JSON silently discards every other repo's binding. Both stay off the read path so `resolve` remains write-free.
