@@ -200,12 +200,14 @@ Two files at plugin root — `references/backend-jira.md` (the adapter) and
 outside `skills/` so skill discovery does not attempt to load them as
 skills, and neither is read on the GitHub path.
 
-Nine operations are the ticketing vocabulary. **They are named in the
-skills only as the JIRA substitution points** — each `gh` block in a
-pipeline skill is tagged with the operation it implements, e.g.
-`<!-- op: create_task -->`, so the adapter can say "replace the
-`create_task` block with this" without the GitHub path ever needing to
-resolve the indirection:
+Nine operations are the ticketing vocabulary. **The skills do not name
+them at all.** `backend-jira.md` opens with a routing table mapping each
+operation to the `gh` command it replaces, by skill and step — so the
+mapping lives in the one file only JIRA readers open, and the GitHub path
+carries no trace of the indirection. Markers in the skills were the first
+design; they were dropped because they taxed eight files, needed a rule
+set of their own to disambiguate blocks that mix `git`, `gh pr`, and
+`gh issue` commands, and nothing could verify they stayed correct.
 
 `create_epic` · `create_task` · `link_dependency` · `list_open_tasks` ·
 `get_state` · `claim` · `mark_in_review` · `comment` · `ticket_url`
@@ -234,10 +236,10 @@ treat a reference as an opaque string.
 
 ### Per-skill changes
 
-Every pipeline skill keeps its existing `gh` text verbatim; the additions
-below are step 0 plus operation tags on the `gh` blocks. The JIRA
-behavior described in each bullet lives in `backend-jira.md`, not in the
-skill.
+Every pipeline skill keeps its existing `gh` text verbatim; the only
+addition to any skill is step 0. The JIRA behavior described in each
+bullet lives in `backend-jira.md`, not in the skill — including which
+command each operation replaces.
 
 - **`ticket`** — step 0 resolves the backend; the dry-run gate table
   gains a `Backend:` header line naming backend and project, so creation
@@ -342,7 +344,7 @@ keyword.
 
 ### T2: Write the JIRA adapter and bind reference documents
 **Acceptance criteria:**
-- [ ] `references/backend-jira.md` defines all nine operations against the cached tool map, keyed by the `<!-- op: … -->` tags in the skills, with `statusCategory != Done` as the open test and Blocks links as dependency edges
+- [ ] `references/backend-jira.md` defines all nine operations against the cached tool map, opening with a routing table that maps each operation to the `gh` command it replaces by skill and step, with `statusCategory != Done` as the open test and Blocks links as dependency edges
 - [ ] `references/backend-bind.md` specifies the `ToolSearch` probe and tool-map caching, the bind prompt including the open-GitHub-issues warning, cloud-id/site capture, and the conditional memory pointer
 - [ ] Each failure mode in the design has a stated behavior in one of the two files
 - [ ] **No `backend-github.md` is created** — the GitHub path stays inline in the skills, and neither reference file is read when `action` is `use-github`
@@ -350,57 +352,25 @@ keyword.
 **Depends on:** T1
 **Out of scope:** skill edits; any GitHub adapter file
 
-### T3: Add JIRA support to sdlc:ticket
-**Acceptance criteria:**
-- [ ] Step 0 runs `sdlc-backend.sh resolve` and branches on `action` in three lines or fewer
-- [ ] All existing `gh` commands remain inline and unchanged, each tagged with its `<!-- op: … -->` operation
-- [ ] The dry-run gate table shows a `Backend:` header line naming backend and project
-- [ ] JIRA-specific behavior (JQL idempotency check, Blocks links) is described in `backend-jira.md`, not in the skill
-- [ ] The `## Depends on` prose is still written on both backends for humans
-**Scope:** `skills/ticket/SKILL.md`
-**Depends on:** T2
-**Out of scope:** other skills
+### T3: Add step 0 and generalize ticket references across the pipeline skills
+Originally five tasks — T3 ticket, T4 next, T5 implement, T6 review, T7
+handoff/resume/cleanup. They collapsed into one when the `<!-- op: … -->`
+markers were dropped: without markers each skill's change is three lines
+of step 0 plus reference-shape generalization, and five review cycles
+cost more than the edit. **T4–T7 are retired; the numbering of T8 and T9
+is left alone so existing issues keep their spec references.**
 
-### T4: Add JIRA support to sdlc:next
 **Acceptance criteria:**
-- [ ] Step 0 runs `resolve` and branches on `action`; existing `gh issue list` text stays inline, tagged `list_open_tasks`
-- [ ] On JIRA the scout normalizes output into the existing node shape inside the subagent; no raw JIRA link JSON reaches the main loop
-- [ ] On JIRA, `dependsOn` derives from inbound "is blocked by" links; open/closed uses `get_state`
-- [ ] Leverage model, readiness test, ranking order, and report format are unchanged
-**Scope:** `skills/next/SKILL.md`
-**Depends on:** T2
-**Out of scope:** other skills
-
-### T5: Add JIRA support to sdlc:implement
-**Acceptance criteria:**
-- [ ] Step 0 runs `resolve` and branches on `action`; existing `gh` blocks stay inline, tagged with their operations
-- [ ] Branch naming is `sdlc/<ref>-<slug>` and works for both `123` and `PROJ-123`
-- [ ] On JIRA the PR title is prefixed `PROJ-123: ` and the body carries `Ticket: <url>` in place of `Closes #<n>`
-- [ ] The PR URL is posted back to the ticket via `comment`
-- [ ] Base-sync and the never-merge rule are unchanged
-**Scope:** `skills/implement/SKILL.md`
-**Depends on:** T2
-**Out of scope:** other skills
-
-### T6: Add JIRA support to sdlc:review
-**Acceptance criteria:**
-- [ ] The reviewed ticket resolves from `Closes #<n>`, a `Ticket:` line, or a key-prefixed PR title
-- [ ] Tier B ticket creation uses `create_task` + `link_dependency`
-- [ ] The approval message states that the ticket stays open until the human moves it
-- [ ] Fan-out, skeptic verification, and the triage gate are unchanged
-**Scope:** `skills/review/SKILL.md`
-**Depends on:** T2, T5
-**Out of scope:** other skills
-
-### T7: Generalize ticket references in handoff, resume, and cleanup
-**Acceptance criteria:**
-- [ ] The handoff file records `Ticket: <ref>` and a `Backend:` line in place of `Issue: #<n>`
-- [ ] `resume` verifies recorded ticket state via `get_state` on the recorded backend
-- [ ] `cleanup` matches `sdlc/<ref>-<slug>` branches for both numeric and `PROJ-123` references
+- [ ] `ticket`, `next`, `implement`, and `review` each run `sdlc-backend.sh resolve` in a step 0 of three lines or fewer and branch on `action`
+- [ ] Every existing `gh` command in every pipeline skill remains inline and byte-identical — no markers, no wrappers, no indirection added to the GitHub path
+- [ ] `ticket`'s dry-run gate table shows a `Backend:` header line naming backend and project
+- [ ] Branch naming is `sdlc/<ref>-<slug>` and works for both `123` and `PROJ-123`; `cleanup` matches both forms
+- [ ] The handoff file records `Ticket: <ref>` and a `Backend:` line in place of `Issue: #<n>`; `resume` verifies state via `get_state` on the recorded backend
+- [ ] All JIRA-specific behavior — JQL, Blocks links, scout normalization, PR title/body shape, the "ticket stays open" approval line — stays in `backend-jira.md`, not in any skill
 - [ ] `tests/test-handoff-pickup.sh` and `tests/test-handoff-worktree.sh` still pass
-**Scope:** `skills/handoff/SKILL.md`, `skills/resume/SKILL.md`, `skills/cleanup/SKILL.md`
+**Scope:** `skills/ticket/SKILL.md`, `skills/next/SKILL.md`, `skills/implement/SKILL.md`, `skills/review/SKILL.md`, `skills/handoff/SKILL.md`, `skills/resume/SKILL.md`, `skills/cleanup/SKILL.md`
 **Depends on:** T2
-**Out of scope:** other skills
+**Out of scope:** `skills/interview/SKILL.md` (already backend-neutral); validation and docs (T8)
 
 ### T8: Extend skill validation and update docs
 **Acceptance criteria:**
@@ -410,7 +380,7 @@ keyword.
 - [ ] `plugin.json` is at `0.5.0` with a `jira` keyword
 - [ ] The full suite passes
 **Scope:** `tests/validate-skills.sh`, `README.md`, `.claude-plugin/plugin.json`
-**Depends on:** T3, T4, T5, T6, T7
+**Depends on:** T3
 **Out of scope:** skill logic changes
 
 ### T9: End-to-end verification against a live JIRA instance
