@@ -239,5 +239,77 @@ eq ""   "$sn_clean" "sniff prints nothing when there are no candidates"
 (cd "$outside" && "$SUT" sniff >/dev/null 2>&1); rc=$?
 eq "3" "$rc" "sniff exits 3 outside a git repo"
 
+# --- MCP config visible only from the main worktree still gates worktrees -
+# Fix 2: jira_mcp_configured must not vary by which worktree you resolve
+# from -- repo_key() collapses every worktree to the main repo, so
+# .mcp.json visibility must too. Left untracked in the main repo so the
+# worktree's own checkout genuinely lacks it.
+mcpmain="$tmp/mcpmain"; mkrepo "$mcpmain" "git@github.com:a/mcpmain.git"
+printf '%s' '{"mcpServers":{"jira-server":{"command":"x"}}}' > "$mcpmain/.mcp.json"
+git -C "$mcpmain" worktree add -q "$tmp/mcpwt" -b feat2 >/dev/null 2>&1
+rm -f "$HOME/.claude.json"
+eq "false" "$([ -f "$tmp/mcpwt/.mcp.json" ] && echo true || echo false)" \
+   ".mcp.json is genuinely absent from the worktree's own checkout"
+eq "bind-needed" "$(cd "$tmp/mcpwt" && "$SUT" resolve | jq -r '.action')" \
+   "worktree resolve sees main repo's untracked .mcp.json -> bind-needed"
+
+# --- get-toolmap and resolve agree on the "no toolmap" shape ------------
+rm -rf "$SDLC_HOME"
+eq "null" "$(cd "$ub" && "$SUT" get-toolmap)" \
+   "get-toolmap on an empty cache prints null"
+
+# --- action gating: malformed / unreadable ~/.claude.json is not fatal --
+printf 'not json at all{{{' > "$HOME/.claude.json"
+out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
+eq "0"          "$rc" "malformed ~/.claude.json exits 0"
+eq "use-github" "$(printf '%s' "$out" | jq -r '.action')" \
+   "malformed ~/.claude.json -> use-github"
+
+chmod 000 "$HOME/.claude.json"
+out=$(cd "$ub" && "$SUT" resolve 2>/dev/null); rc=$?
+eq "0"          "$rc" "unreadable ~/.claude.json exits 0"
+eq "use-github" "$(printf '%s' "$out" | jq -r '.action')" \
+   "unreadable ~/.claude.json -> use-github"
+chmod 644 "$HOME/.claude.json"
+rm -f "$HOME/.claude.json"
+
+# --- sniff: denylist rejects only exact whole-line matches --------------
+# MDX, ARMOR, and HTTP2 all CONTAIN a denylisted string (MD, ARM, HTTP)
+# but are not EQUAL to it; grep -vxE's -x (whole-line) flag is what lets
+# them survive. ARM itself is denylisted and must still be rejected in
+# the same run, proving discrimination rather than a disabled filter.
+dl="$tmp/denylist"; mkrepo "$dl" "git@github.com:a/denylist.git"
+d() { git -C "$dl" commit -q --allow-empty -m "$1"; }
+d "MDX-1 a";   d "MDX-2 b";   d "MDX-3 c"
+d "ARMOR-1 a"; d "ARMOR-2 b"; d "ARMOR-3 c"
+d "HTTP2-1 a"; d "HTTP2-2 b"; d "HTTP2-3 c"
+d "ARM-1 a";   d "ARM-2 b";   d "ARM-3 c"
+dl_out=$(cd "$dl" && "$SUT" sniff)
+for k in MDX ARMOR HTTP2; do
+  printf '%s\n' "$dl_out" | grep -q "^$k " \
+    && ok "sniff proposes lookalike $k (contains a denylisted string)" \
+    || bad "sniff dropped lookalike $k -- is -x missing?"
+done
+printf '%s\n' "$dl_out" | grep -q '^ARM ' \
+  && bad "sniff proposed denylisted key ARM" \
+  || ok "sniff still rejects genuinely denylisted ARM"
+
+# --- documented error exit codes -----------------------------------------
+errrepo="$tmp/errrepo"; mkrepo "$errrepo" "git@github.com:a/errrepo.git"
+(cd "$errrepo" && "$SUT" >/dev/null 2>&1)
+eq "2" "$?" "no arguments at all exits 2"
+(cd "$errrepo" && "$SUT" bogus >/dev/null 2>&1)
+eq "2" "$?" "unknown command exits 2"
+(cd "$errrepo" && "$SUT" set --backend bogus >/dev/null 2>&1)
+eq "2" "$?" "set --backend bogus (invalid value) exits 2"
+(cd "$errrepo" && "$SUT" set --nope x >/dev/null 2>&1)
+eq "2" "$?" "set --nope (unknown flag) exits 2"
+(cd "$errrepo" && printf 'not json' | "$SUT" set-toolmap >/dev/null 2>&1)
+eq "2" "$?" "set-toolmap with invalid JSON on stdin exits 2"
+(cd "$outside" && "$SUT" set --backend github >/dev/null 2>&1)
+eq "3" "$?" "set outside a git repo exits 3"
+(cd "$outside" && "$SUT" unset >/dev/null 2>&1)
+eq "3" "$?" "unset outside a git repo exits 3"
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
