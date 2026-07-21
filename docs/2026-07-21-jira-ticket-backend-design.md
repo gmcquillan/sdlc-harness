@@ -31,25 +31,53 @@ backends, migrating existing GitHub issues into JIRA.
 Three pieces, in order of how much they are trusted:
 
 1. **`bin/sdlc-backend.sh`** — a shell utility owning everything
-   deterministic: repo identity, the preference cache, and the
-   git-history scan for JIRA keys. Unit-tested.
-2. **`references/backend-*.md`** — adapter documents defining nine
-   ticketing operations and how each backend performs them. Read by the
-   model.
-3. **The pipeline skills** — rewritten to speak only in those nine
-   operations, so their logic (leverage ranking, readiness, human gates)
-   exists once regardless of backend.
+   deterministic: repo identity, the preference cache, the git-history
+   scan for JIRA keys, and the check for whether a JIRA MCP is even
+   configured. Unit-tested.
+2. **`references/backend-jira.md`** — the JIRA adapter, defining nine
+   ticketing operations. Read by the model **only when the resolved
+   backend is JIRA**.
+3. **The pipeline skills** — unchanged on the GitHub path, plus a
+   three-line step 0 that swaps in the JIRA adapter when bound.
 
-The split exists because a skill instruction like "scan git log for JIRA
-keys and rank by frequency" is prose the model re-improvises every
-session, while a script does it identically every time and can be proven
-correct by a test.
+The script/prose split exists because a skill instruction like "scan git
+log for JIRA keys and rank by frequency" is prose the model re-improvises
+every session, while a script does it identically every time and can be
+proven correct by a test.
+
+### Cost to a GitHub-only user: one bash call
+
+This is a hard constraint on the design, not an afterthought. The
+pipeline is used mostly by repos that will never touch JIRA, and they
+must not pay for the feature.
+
+- **No new skills.** Skill frontmatter is the only thing loaded into
+  every session regardless of use; adding a `backend` skill would put its
+  description in every session forever. The adapter is a reference file
+  instead, read on demand.
+- **GitHub is not abstracted.** The `gh` invocations stay written
+  literally in `ticket`, `next`, `implement`, and `review`, exactly as
+  they read today. There is deliberately **no `backend-github.md`** — an
+  adapter file for the default path would force the common case to read a
+  file to recover instructions it already had inline. Only JIRA, the
+  opt-in path, pays indirection.
+- **The cold path is gated by the script.** `resolve` reports whether any
+  JIRA MCP is configured at all; when none is, it returns
+  `action: use-github` and the model never probes, prompts, reads the
+  adapter, or writes a cache entry.
+- **Binding prose is separated from adapter prose.** The bind procedure
+  lives in `references/backend-bind.md` and is read once ever — on the
+  first bind — not on every JIRA run.
+
+Net: a GitHub-only repo pays one `resolve` call and roughly three lines
+of step-0 prose per pipeline skill, with no extra file reads. A
+JIRA-bound repo additionally reads one adapter file per session.
 
 ### `bin/sdlc-backend.sh`
 
 | Command | Behavior |
 |---|---|
-| `resolve` | Prints one JSON object: repo key, backend, project, cloud id, cached tool map. Exit 3 outside a git repo. |
+| `resolve` | Prints one JSON object: repo key, `action`, backend, project, cloud id, site, cached tool map. Exit 3 outside a git repo. |
 | `sniff` | Ranked JIRA-key candidates from history, one `KEY COUNT` per line. |
 | `set --backend <github\|jira> [--project K] [--cloud-id X] [--site URL]` | Binds the current repo. |
 | `set-toolmap` / `get-toolmap` | Global op→tool-name map, read from / written to stdout as JSON. |
@@ -112,24 +140,42 @@ Candidates below 3 hits are not proposed.
 
 ### Backend resolution
 
-Step 0 of `ticket`, `next`, `implement`, and `review`:
+Step 0 of `ticket`, `next`, `implement`, and `review` is three lines of
+prose: run `bin/sdlc-backend.sh resolve` and branch on its `action`.
 
-1. `resolve` returns a cached backend → use it. No prompts, no MCP calls.
-2. No binding → probe via `ToolSearch` for JIRA tools. **None found →
-   GitHub, and nothing is cached**, so installing a JIRA MCP later still
-   produces the bind prompt.
-3. JIRA tools found and the repo is unbound → run `sniff`, then ask once:
+| `action` | Meaning | What the model does |
+|---|---|---|
+| `use-github` | Bound to GitHub, **or** no JIRA MCP is configured | Nothing. Continue with the `gh` commands written inline below. |
+| `use-jira` | Bound to JIRA, tool map cached | Read `references/backend-jira.md`; use its operations in place of the inline `gh` calls. |
+| `bind-needed` | A JIRA MCP is configured but this repo is unbound | Read `references/backend-bind.md` and follow it. |
 
-   > History shows `PROJ` (42 refs). Use JIRA project PROJ, a different
-   > project, or stay on GitHub issues?
+`use-github` is the only outcome for a machine with no JIRA MCP, and it
+costs one bash call — no probe, no prompt, no file read, and **no cache
+write**, so installing a JIRA MCP later still produces the bind prompt.
 
-   "A different project" lists projects via the `list_projects` tool. The
-   answer is cached with `source: git-sniff-confirmed` or
-   `source: user-selected`. The cloud id and site URL are captured from
-   the `list_projects` response at bind time, so `ticket_url` never needs
-   a live call to build a link.
-4. `--backend github|jira` on any skill invocation overrides that run
-   **without** rewriting the binding.
+The script decides between `use-github` and `bind-needed` by checking
+whether any configured MCP server looks like JIRA — a case-insensitive
+`jira|atlassian` match over the server names in `~/.claude.json` and any
+project `.mcp.json`. A server named unrecognizably yields a false
+`use-github`; `--backend jira` on the invocation, or a manual
+`sdlc-backend.sh set`, is the escape hatch. Cheap heuristic, cheap
+override, and the common case stays free.
+
+**Binding** (`references/backend-bind.md`, read only on `bind-needed`):
+probe the tool map, run `sniff`, then ask once —
+
+> History shows `PROJ` (42 refs). Use JIRA project PROJ, a different
+> project, or stay on GitHub issues?
+
+"A different project" lists projects via the `list_projects` tool. The
+answer is cached with `source: git-sniff-confirmed` or
+`source: user-selected`. The cloud id and site URL are captured from the
+`list_projects` response at bind time, so `ticket_url` never needs a live
+call to build a link. Choosing GitHub here **is** cached — it is an
+explicit decision, unlike the no-MCP case.
+
+`--backend github|jira` on any skill invocation overrides that run
+**without** rewriting the binding.
 
 **Tool map probing.** On the first JIRA use, `ToolSearch` for JIRA tools
 and fill in each tool-map slot from whatever names exist — the map is
@@ -149,19 +195,22 @@ is a human-readable breadcrumb, not a second source of truth.
 
 ### The adapter layer
 
-Three files at plugin root — `references/backend-resolve.md`,
-`references/backend-github.md`, `references/backend-jira.md`. They live
+Two files at plugin root — `references/backend-jira.md` (the adapter) and
+`references/backend-bind.md` (the cold-path bind procedure). They live
 outside `skills/` so skill discovery does not attempt to load them as
-skills.
+skills, and neither is read on the GitHub path.
 
-Nine operations are the entire ticketing vocabulary the pipeline knows:
+Nine operations are the ticketing vocabulary. **They are named in the
+skills only as the JIRA substitution points** — each `gh` block in a
+pipeline skill is tagged with the operation it implements, e.g.
+`<!-- op: create_task -->`, so the adapter can say "replace the
+`create_task` block with this" without the GitHub path ever needing to
+resolve the indirection:
 
 `create_epic` · `create_task` · `link_dependency` · `list_open_tasks` ·
 `get_state` · `claim` · `mark_in_review` · `comment` · `ticket_url`
 
-The GitHub adapter is the current `gh` invocations, lifted verbatim out
-of the skills. The JIRA adapter maps the same operations through the
-cached tool map:
+The JIRA adapter maps those operations through the cached tool map:
 
 | Operation | JIRA |
 |---|---|
@@ -185,22 +234,28 @@ treat a reference as an opaque string.
 
 ### Per-skill changes
 
+Every pipeline skill keeps its existing `gh` text verbatim; the additions
+below are step 0 plus operation tags on the `gh` blocks. The JIRA
+behavior described in each bullet lives in `backend-jira.md`, not in the
+skill.
+
 - **`ticket`** — step 0 resolves the backend; the dry-run gate table
-  gains a `Backend: JIRA (PROJ)` header line, so creation into the wrong
-  system cannot be approved by accident. Creation steps become adapter
-  operations. The JIRA idempotency check is a JQL search for the spec
-  slug in epic summaries. The `## Depends on` markdown section is still
-  written into the description on both backends for humans, but on JIRA
-  the authoritative edge is the Blocks link.
+  gains a `Backend:` header line naming backend and project, so creation
+  into the wrong system cannot be approved by accident. The JIRA
+  idempotency check is a JQL search for the spec slug in epic summaries.
+  The `## Depends on` markdown section is still written into the
+  description on both backends for humans, but on JIRA the authoritative
+  edge is the Blocks link.
 - **`next`** — leverage model, readiness test, ranking, and report format
-  are unchanged. The gather scout calls `list_open_tasks` and must
+  are unchanged. On JIRA the gather scout calls `list_open_tasks` and must
   normalize the result into the existing compact node shape
   (`{ref, title, dependsOn, inProgress, inReview, assigned, ops,
   createdAt}`) **inside the subagent** — JIRA's issue-link JSON must not
   reach the main loop, which is the whole reason that step is delegated.
   On JIRA, `dependsOn` comes from inbound "is blocked by" links.
-- **`implement`** — selection and claiming become operations. The branch
-  is `sdlc/<ref>-<slug>`, so `sdlc/PROJ-123-add-widget`. The PR title is
+- **`implement`** — the branch pattern generalizes to `sdlc/<ref>-<slug>`
+  on both backends, so `sdlc/42-add-widget` or
+  `sdlc/PROJ-123-add-widget`. On JIRA the PR title is
   prefixed `PROJ-123: `; the body's `Closes #<n>` becomes
   `Ticket: <url>`, because a JIRA key cannot auto-close from a GitHub
   merge. Base-sync and every step after delivery are unchanged.
@@ -245,10 +300,15 @@ with `SDLC_HOME` pointed at a temp directory and throwaway git repos:
   `backend: null`
 - tool map round trip
 - absent and malformed `repos.json` treated as empty, not fatal
+- **`action` gating**: no JIRA-looking MCP configured → `use-github` with
+  no cache write; a `jira`/`atlassian` server name present and the repo
+  unbound → `bind-needed`; bound repo → `use-jira` regardless of config
 
-`tests/validate-skills.sh` gains two assertions: each pipeline skill
-mentions `backend-resolve`, and all three `references/*.md` exist —
-guarding against a future edit silently dropping step 0.
+`tests/validate-skills.sh` gains three assertions: each pipeline skill
+runs `sdlc-backend.sh resolve` in step 0, both `references/*.md` exist,
+and **no pipeline skill has lost its inline `gh` commands** — that last
+one is the regression guard for the svelte constraint, since abstracting
+the GitHub path away is exactly the mistake this design corrected.
 
 **Not machine-verified:** bash cannot call MCP tools, so the JIRA adapter
 is verified by one end-to-end manual run against a real JIRA instance —
@@ -267,7 +327,9 @@ keyword.
 
 ### T1: Add bin/sdlc-backend.sh with repo keying, cache, and key sniffing
 **Acceptance criteria:**
-- [ ] `resolve` prints JSON with repo key, backend, project, cloud id, and tool map; exits 3 outside a git repo
+- [ ] `resolve` prints JSON with repo key, `action`, backend, project, cloud id, site, and tool map; exits 3 outside a git repo
+- [ ] `action` is `use-github` when no `jira`/`atlassian` MCP server is configured in `~/.claude.json` or a project `.mcp.json`, and that path writes nothing to the cache
+- [ ] `action` is `bind-needed` when such a server is configured and the repo is unbound, and `use-jira` when the repo is bound to JIRA
 - [ ] All four remote URL forms normalize to one `host/owner/name` key
 - [ ] A worktree resolves to the same key as its main repo; a no-origin repo gets a stable `git-common-dir` fallback key
 - [ ] `sniff` ranks JIRA keys by frequency over 500 commits and branch names, applies the denylist, and suppresses candidates under 3 hits
@@ -278,41 +340,40 @@ keyword.
 **Depends on:** none
 **Out of scope:** any MCP interaction; any skill edits
 
-### T2: Write the backend resolution and adapter reference documents
+### T2: Write the JIRA adapter and bind reference documents
 **Acceptance criteria:**
-- [ ] `references/backend-resolve.md` specifies the four-step resolution order, the `ToolSearch` probe and tool-map caching, the bind prompt (including the open-GitHub-issues warning), the `--backend` override, and the conditional memory pointer
-- [ ] `references/backend-github.md` defines all nine operations as the `gh` commands currently in the skills
-- [ ] `references/backend-jira.md` defines all nine operations against the cached tool map, with `statusCategory != Done` as the open test and Blocks links as dependency edges
-- [ ] Both adapters document the same nine operation names and the opaque-reference convention
-- [ ] Each failure mode in the design has a stated behavior in `backend-resolve.md`
-**Scope:** `references/backend-resolve.md`, `references/backend-github.md`, `references/backend-jira.md`
+- [ ] `references/backend-jira.md` defines all nine operations against the cached tool map, keyed by the `<!-- op: … -->` tags in the skills, with `statusCategory != Done` as the open test and Blocks links as dependency edges
+- [ ] `references/backend-bind.md` specifies the `ToolSearch` probe and tool-map caching, the bind prompt including the open-GitHub-issues warning, cloud-id/site capture, and the conditional memory pointer
+- [ ] Each failure mode in the design has a stated behavior in one of the two files
+- [ ] **No `backend-github.md` is created** — the GitHub path stays inline in the skills, and neither reference file is read when `action` is `use-github`
+**Scope:** `references/backend-jira.md`, `references/backend-bind.md`
 **Depends on:** T1
-**Out of scope:** skill edits
+**Out of scope:** skill edits; any GitHub adapter file
 
-### T3: Make sdlc:ticket backend-agnostic
+### T3: Add JIRA support to sdlc:ticket
 **Acceptance criteria:**
-- [ ] Step 0 resolves the backend per `references/backend-resolve.md`
+- [ ] Step 0 runs `sdlc-backend.sh resolve` and branches on `action` in three lines or fewer
+- [ ] All existing `gh` commands remain inline and unchanged, each tagged with its `<!-- op: … -->` operation
 - [ ] The dry-run gate table shows a `Backend:` header line naming backend and project
-- [ ] Epic and task creation and the epic task list go through adapter operations, not literal `gh` calls
-- [ ] The JIRA idempotency check is a JQL search of epic summaries for the spec slug
-- [ ] Dependencies are recorded as `link_dependency` calls, with the `## Depends on` prose still written for humans
+- [ ] JIRA-specific behavior (JQL idempotency check, Blocks links) is described in `backend-jira.md`, not in the skill
+- [ ] The `## Depends on` prose is still written on both backends for humans
 **Scope:** `skills/ticket/SKILL.md`
 **Depends on:** T2
 **Out of scope:** other skills
 
-### T4: Make sdlc:next backend-agnostic
+### T4: Add JIRA support to sdlc:next
 **Acceptance criteria:**
-- [ ] Step 0 resolves the backend; gather calls `list_open_tasks`
-- [ ] The scout normalizes backend output into the existing node shape inside the subagent; no raw JIRA link JSON reaches the main loop
+- [ ] Step 0 runs `resolve` and branches on `action`; existing `gh issue list` text stays inline, tagged `list_open_tasks`
+- [ ] On JIRA the scout normalizes output into the existing node shape inside the subagent; no raw JIRA link JSON reaches the main loop
 - [ ] On JIRA, `dependsOn` derives from inbound "is blocked by" links; open/closed uses `get_state`
 - [ ] Leverage model, readiness test, ranking order, and report format are unchanged
 **Scope:** `skills/next/SKILL.md`
 **Depends on:** T2
 **Out of scope:** other skills
 
-### T5: Make sdlc:implement backend-agnostic
+### T5: Add JIRA support to sdlc:implement
 **Acceptance criteria:**
-- [ ] Step 0 resolves the backend; selection, claim, and mark-in-review use adapter operations
+- [ ] Step 0 runs `resolve` and branches on `action`; existing `gh` blocks stay inline, tagged with their operations
 - [ ] Branch naming is `sdlc/<ref>-<slug>` and works for both `123` and `PROJ-123`
 - [ ] On JIRA the PR title is prefixed `PROJ-123: ` and the body carries `Ticket: <url>` in place of `Closes #<n>`
 - [ ] The PR URL is posted back to the ticket via `comment`
@@ -321,7 +382,7 @@ keyword.
 **Depends on:** T2
 **Out of scope:** other skills
 
-### T6: Make sdlc:review backend-agnostic
+### T6: Add JIRA support to sdlc:review
 **Acceptance criteria:**
 - [ ] The reviewed ticket resolves from `Closes #<n>`, a `Ticket:` line, or a key-prefixed PR title
 - [ ] Tier B ticket creation uses `create_task` + `link_dependency`
@@ -343,9 +404,9 @@ keyword.
 
 ### T8: Extend skill validation and update docs
 **Acceptance criteria:**
-- [ ] `tests/validate-skills.sh` asserts each of ticket/next/implement/review mentions `backend-resolve`
-- [ ] `tests/validate-skills.sh` asserts all three `references/*.md` exist
-- [ ] README gains a "Ticket backends" section, lists the JIRA MCP as optional, and its tests command covers the new test
+- [ ] `tests/validate-skills.sh` asserts each of ticket/next/implement/review runs `sdlc-backend.sh resolve` in step 0
+- [ ] `tests/validate-skills.sh` asserts both `references/*.md` exist and that no pipeline skill has lost its inline `gh` commands
+- [ ] README gains a "Ticket backends" section stating the GitHub-path cost is one bash call, lists the JIRA MCP as optional, and its tests command covers the new test
 - [ ] `plugin.json` is at `0.5.0` with a `jira` keyword
 - [ ] The full suite passes
 **Scope:** `tests/validate-skills.sh`, `README.md`, `.claude-plugin/plugin.json`
