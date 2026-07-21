@@ -74,8 +74,16 @@ process for nothing. Resolve every operation below through
 Only after a mid-session re-probe (below) do you need to read it back:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" get-toolmap
+sdlc-backend.sh get-toolmap
 ```
+
+Call it by bare name, with no path in front. A plugin's `bin/` directory
+is prepended to `PATH`, so `sdlc-backend.sh` resolves to the plugin's own
+copy. Do **not** write `bin/sdlc-backend.sh` (the cwd is the user's repo,
+not the plugin) and do not write `"${CLAUDE_PLUGIN_ROOT}/bin/…"` — that
+variable is not exported into the Bash tool environment during a skill
+step, so it expands to the empty string and the command becomes
+`/bin/sdlc-backend.sh`, which does not exist.
 
 That prints the cached object, or the literal `null` when none is
 cached.
@@ -98,11 +106,21 @@ it already ticketed:
 
 ```
 tool: toolmap.ops.search
-jql:  project = <project> AND issuetype = Epic AND summary ~ "<slug>"
+jql:  project = <project> AND issuetype = Epic
+      AND labels = "sdlc:epic" AND summary ~ "<slug>"
 ```
 
-A hit means the epic exists: reuse its key and create nothing. This
-replaces the GitHub `gh issue list --search "<slug>"` check.
+**Reuse a hit only if its summary is exactly `[epic] <slug>`.** JQL's `~`
+is fuzzy word matching — it is the only operator JQL offers on `summary`,
+so the exactness test happens on the returned issue, not in the query.
+Both guards matter: `labels = "sdlc:epic"` keeps hand-made epics out of
+the result set, and the exact-summary test keeps a fuzzy word overlap
+("auth" matching "Auth rate limiting") from adopting an unrelated epic
+and filing every task in the project underneath it. No exact match →
+treat it as "no epic exists" and create one.
+
+A qualifying hit means the epic exists: reuse its key and create nothing.
+This replaces the GitHub `gh issue list --search "<slug>"` check.
 
 Otherwise:
 
@@ -110,7 +128,8 @@ Otherwise:
 tool: toolmap.ops.create_issue
   project:    <project>        # from resolve
   issue type: Epic
-  summary:    [epic] <slug>
+  labels:     ["sdlc:epic"]    # what the lookup above matches on
+  summary:    [epic] <slug>    # the exact string the lookup requires
   description: Spec: `<spec-path>` (commit <sha>)
                ## Tasks
                - [ ] <REF> <title>       # backfilled once children exist
@@ -118,7 +137,10 @@ tool: toolmap.ops.create_issue
 
 The `## Tasks` checklist is written for humans, exactly as on GitHub, with
 `PROJ-123` references in place of `#123`. The authoritative parent-child
-edge is the `parent` field set by `create_task`, not this list.
+edge is the one `create_task` writes — the `parent` field, or whichever
+fallback it names — not this list. The list is still worth keeping
+current: it is what `list_open_tasks` cross-checks an empty scoped result
+against.
 
 ### `create_task`
 
@@ -142,12 +164,27 @@ the readable copy.
 
 Keep the *layout* too, not just the headings: the reference goes on the
 line **under** `## Epic`, never on the heading line, because `review`
-step 5 resolves the epic by reading the ref under that heading.
+step 5 resolves the epic by reading the ref under that heading — and
+because that section is the epic edge of last resort (below).
 
-If the server rejects `parent` (some projects are not
-team-managed, and classic projects use an Epic Link custom field
-instead), fall back to a Blocks-free `link_issues` call with the server's
-epic-link type, and say once that parent linkage used the fallback.
+**The `## Epic` section is written on every task, always**, whether or
+not the `parent` field took. On GitHub there is no parent field at all
+and this section *is* the epic association; on JIRA it is the same
+readable fallback, so a task is never orphaned by a project layout.
+
+If the server rejects `parent` (some projects are not team-managed, and
+classic projects use an Epic Link custom field instead), fall back in
+this order and **say once** which mechanism carried the epic edge:
+
+1. A `link_issues` call using the server's **epic-link** type. Not
+   Blocks — Blocks means "must finish first" and belongs to
+   `link_dependency` alone; reusing it here would inject phantom
+   dependencies into `next`'s leverage graph.
+2. If the server exposes no epic-link type either, the `## Epic` section
+   in the description is the epic edge on its own.
+
+Whichever mechanism carried it, `list_open_tasks` must read the epic edge
+back the *same* way — see the scoping table there.
 
 ### `link_dependency`
 
@@ -174,11 +211,33 @@ this once per server, not once per link.
 ```
 tool: toolmap.ops.search
 jql:  project = <project> AND labels = "sdlc:task" AND statusCategory != Done
-expand: issue links, assignee, labels, created
+expand: issue links, labels, description, created
 ```
 
-Scoped to one epic (`sdlc:next <epic ref>`), add
-`AND parent = <epic ref>`.
+Scoped to one epic (`sdlc:next <epic ref>`), narrow by **whichever
+mechanism `create_task` actually used** for the epic edge:
+
+| Epic edge `create_task` wrote | How to scope |
+|---|---|
+| `parent` field | add `AND parent = <epic ref>` to the JQL |
+| epic-link issue link | keep tasks whose expanded links point at `<epic ref>` |
+| `## Epic` section only | keep tasks whose description has `<epic ref>` under `## Epic` |
+
+**Never add `AND parent = <epic ref>` unconditionally.** On a classic
+project the parent field was never set, so that clause matches nothing,
+`sdlc:next <epic>` reports "nothing ready", and a silent wrong answer
+lands where a loud failure belongs.
+
+When the scoping mechanism is not known up front, read the description
+(`## Epic`) — it is written on every task and is therefore the one filter
+that works on every project layout.
+
+**Fail loudly, never emptily.** If the scoped set comes back empty,
+cross-check it against the epic's own `## Tasks` checklist via
+`get_state` — exactly as the GitHub path does. Checklist non-empty but
+scoped set empty means the epic edge could not be read: **stop and
+report** which mechanisms were tried. Only an epic whose checklist is
+also empty may legitimately answer "no open tasks".
 
 The caller is always a subagent. **Normalize inside that subagent** to the
 node shape the main loop expects — `{ref, title, dependsOn, inProgress,
@@ -186,7 +245,9 @@ inReview, assigned, ops, createdAt}` (`sdlc:next` currently names that
 first field `number`; T4 generalizes it to `ref` for both backends) —
 where `dependsOn` is the list of
 inbound "is blocked by" refs and `inProgress` / `inReview` / `ops` are
-label tests. Raw JIRA issue-link JSON must never reach the main loop;
+label tests. **`assigned` is always `false` on JIRA**: the claim is the
+`sdlc:in-progress` label, not the assignee field — see `claim` below.
+Raw JIRA issue-link JSON must never reach the main loop;
 avoiding that is the entire reason the gather step is delegated.
 
 ### `get_state`
@@ -211,10 +272,29 @@ keeps the pipeline out of custom workflow configuration entirely.
 
 ```
 tool: toolmap.ops.edit_issue
-  ref:      <ticket ref>
-  assignee: <current user>
-  labels:   add "sdlc:in-progress"
+  ref:    <ticket ref>
+  labels: add "sdlc:in-progress"
 ```
+
+**On JIRA the label alone is the claim. The adapter never sets an
+assignee.** Atlassian Cloud wants an accountId to assign an issue, and
+the bind probe defines no user-lookup slot to turn "me" into one — by
+design. A live user lookup on every claim would buy nothing the label
+does not already do: the label is what prevents double pickup by parallel
+sessions, which is the whole job of this operation.
+
+That makes readiness read differently on the two backends, and this is
+the only place they differ:
+
+| | GitHub | JIRA |
+|---|---|---|
+| Claim is | `sdlc:in-progress` label **+** assignee | `sdlc:in-progress` label |
+| Ready iff | not `in-progress`/`in-review`, **unassigned**, deps closed | not `in-progress`/`in-review`, deps closed |
+
+So wherever `sdlc:next` and `sdlc:implement` require a ticket to be
+**unassigned**, drop that clause on JIRA and gate on the absence of
+`sdlc:in-progress` instead. A human-set assignee is information, not a
+gate; it never makes a ticket un-ready.
 
 ### `mark_in_review`
 
@@ -282,6 +362,7 @@ ticket stays open until you move it."*
 | JIRA MCP erroring or unauthenticated | **Stop and report.** Never fall back to GitHub — filing tickets into the wrong system is worse than a hard stop. |
 | A cached tool name is absent from `ToolSearch` | Re-probe per `backend-bind.md`, write back with `set-toolmap`, continue. Stale maps are never fatal. |
 | `toolmap.ops.link_issues` is unset (server has no issue linking) | Fall back to parsing the `## Depends on` prose as the dependency edge, and **say so once** in the run rather than silently dropping the graph. |
+| A scoped `list_open_tasks` returns nothing but the epic's `## Tasks` checklist is non-empty | The epic edge is unreadable. **Stop and report** the mechanisms tried. Never answer "nothing ready" from an empty scoped set. |
 | `toolmap.ops.search` is unset | Stop and report. Without search there is no `list_open_tasks`, no idempotency check, and `next` cannot rank anything. |
 | `resolve` said `use-github` but this file was opened | Something mis-routed. Stop, re-run `resolve`, and follow its `action`. |
 | Ticket ref not found, or `project` does not exist | Stop and report. Do **not** create a replacement ticket — a wrong-project ticket is invisible work. |
@@ -294,6 +375,18 @@ ticket stays open until you move it."*
 - Letting raw JIRA JSON reach the main loop from the `list_open_tasks`
   scout — that is the context blowup the delegation exists to prevent.
 - Reversing the Blocks direction — inverts the leverage ranking silently.
+- Reusing an epic on a fuzzy `summary ~` hit alone — adopts a stranger's
+  epic and parents the whole project under it. Require the `sdlc:epic`
+  label *and* an exact `[epic] <slug>` summary.
+- Scoping tasks with `AND parent = <epic ref>` on a project where the
+  parent field was rejected — returns empty, and empty reads as "nothing
+  ready" instead of as a failure.
+- Gating readiness on an empty assignee field — on JIRA the claim is the
+  `sdlc:in-progress` label; the adapter never assigns anyone.
+- Writing `"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh"` or
+  `bin/sdlc-backend.sh` — the first expands to a path that does not
+  exist, the second only works from a checkout of this plugin. Bare
+  `sdlc-backend.sh`.
 - Suppressing `gh pr` commands because the backend is JIRA — reviews stay
   on GitHub.
 - Falling back to GitHub issues when JIRA errors — always stop instead.
