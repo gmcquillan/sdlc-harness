@@ -14,61 +14,50 @@ reviews stay on GitHub.
 
 ## How to use this file
 
-Each `gh` block in a pipeline skill is tagged with the ticketing
-operation it implements:
+The pipeline skills are written for GitHub, with their `gh` commands
+inline and untouched. On JIRA, replace **only** the commands named in the
+table below with this file's definition of the operation beside them.
+Everything else — the skills' ordering, their gates, their report
+formats, and every command not named here — is unchanged.
 
-```markdown
-<!-- op: create_task -->
-```
+This table is the whole routing layer. It lives here rather than as
+markers in the skills so that the GitHub path carries no trace of JIRA,
+and so a change to the mapping is one edit rather than eight.
 
-On JIRA, run this file's definition for that operation **instead of** the
-tagged command. Everything else in the skill — its ordering, its gates,
-its report formats — is unchanged.
-
-Three rules make that unambiguous, because the skills' fenced blocks mix
-GitHub-side and ticket-side commands:
-
-1. **A tag marks a command, not a whole fenced block.** `implement`
-   step 11 is one block holding `git push`, `gh pr create`,
-   `gh issue edit`, and `gh issue comment`; only the last two are
-   ticketing operations. Substitute those two and leave the rest of the
-   block running exactly as written.
-2. **One command may carry several tags** — run every tagged operation.
-   `ticket` step 6's single `gh issue create` implements `create_task`
-   *and*, through its `## Depends on` section, `link_dependency`. On
-   JIRA that is two calls: create the Story, then link it.
-3. **Untagged commands always run exactly as written**, even when they
-   share a block with a tagged one. Those are the GitHub-side
-   operations: `gh pr create`, `gh pr view`, `gh pr review`,
-   `gh pr checkout`, and `gh auth status`. A JIRA binding never
-   suppresses them.
-
-Where the tags live:
-
-| Operation | Tagged command |
+| Operation | Replaces |
 |---|---|
-| `create_epic` | `ticket` step 2 (the idempotency search), step 5, and the epic-body backfill in step 7 |
-| `create_task` | `ticket` step 6; `review` step 5 tier B (tier C creates a tier-B-style ticket through the same block) |
-| `link_dependency` | `ticket` step 6; `review` step 5 tier B |
-| `list_open_tasks` | `next` step 2; `implement` step 1 |
-| `get_state` | `next` step 2; `implement` step 1; `review` step 1; `resume` step 3 |
-| `claim` | `implement` step 3 |
-| `mark_in_review` | `implement` step 11 |
-| `comment` | `implement` step 11 |
-| `ticket_url` | `implement` step 11 PR body; `review` step 1 |
+| `create_epic` | `ticket` step 2 `gh issue list` (the idempotency search), step 5 `gh issue create`, and step 7 `gh issue edit` (the epic task-list backfill) |
+| `create_task` | `ticket` step 6 `gh issue create`; `review` step 5 tier B `gh issue create` (tier C files a tier-B-style ticket through that same command) |
+| `link_dependency` | no GitHub command of its own — it is the `## Depends on` section of the `create_task` commands above, which on JIRA becomes a second call once the Story exists |
+| `list_open_tasks` | `next` step 2 `gh issue list`; `implement` step 1 `gh issue list` |
+| `get_state` | `next` step 2 and `implement` step 1 `gh issue view <ref> --json state`; `review` step 1 `gh issue view <n> --json body`; `resume` step 3 `gh issue view <n> --json labels` |
+| `claim` | `implement` step 3 `gh issue edit` |
+| `mark_in_review` | `implement` step 11 `gh issue edit` |
+| `comment` | `implement` step 11 `gh issue comment` |
+| `ticket_url` | builds the `Ticket:` line in `implement` step 11's PR body, in place of `Closes #<n>` |
 
-`ticket` step 2 is tagged `create_epic`, **not** `list_open_tasks`: it
-searches for an existing *epic* across all states, which
-`list_open_tasks` — scoped to open `sdlc:task` issues — can never
-return. Routing it to `list_open_tasks` would make the check answer
-"none" every time and file a duplicate epic on every run. Its JQL is
-defined under `create_epic` below.
+Two rows are easy to get wrong:
 
-One deliberate exception to rule 3: **`gh label create` in `ticket`
-step 3 is untagged but must be skipped.** JIRA labels come into
-existence when first applied, so there is nothing to pre-create, and
-running it would create four unused labels in the GitHub repo. Skip that
-block; do not invent a JIRA equivalent.
+- **`ticket` step 2 is `create_epic`, not `list_open_tasks`.** It
+  searches for an existing *epic* across all states, which
+  `list_open_tasks` — scoped to open `sdlc:task` issues — can never
+  return. Route it wrongly and the idempotency check answers "none" every
+  run and files a duplicate epic. Its JQL is defined under `create_epic`
+  below.
+- **`implement` step 11 is a single fenced block holding four commands.**
+  Only `gh issue edit` and `gh issue comment` are ticketing operations;
+  the `git push` and `gh pr create` beside them run exactly as written.
+  Substitute commands, never whole blocks.
+
+**Commands that always run as written**, on either backend: `gh pr
+create`, `gh pr view`, `gh pr review`, `gh pr checkout`, `gh auth
+status`, and every `git` command. Code review stays on GitHub; a JIRA
+binding never suppresses them.
+
+**One command is skipped rather than translated:** `gh label create` in
+`ticket` step 3. JIRA labels come into existence when first applied, so
+there is nothing to pre-create, and running it would leave four unused
+labels in the GitHub repo. Skip it; do not invent a JIRA equivalent.
 
 ## Resolving tools
 
