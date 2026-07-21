@@ -191,5 +191,53 @@ eq "use-jira" "$(cd "$cr" && "$SUT" set --backend jira >/dev/null 2>&1; \
                  cd "$cr" && "$SUT" resolve | jq -r '.action')" \
    "bound to jira -> use-jira even with no MCP configured"
 
+# --- sniff --------------------------------------------------------------
+sn="$tmp/sniff"; mkrepo "$sn" "git@github.com:a/sniff.git"
+c() { git -C "$sn" commit -q --allow-empty -m "$1"; }
+c "PROJ-1 first";  c "PROJ-2 second"; c "PROJ-3 third"; c "PROJ-4 fourth"
+c "MINOR-1 a";     c "MINOR-2 b";     c "MINOR-3 c"
+c "RARE-1 only once"; c "RARE-2 twice"          # 2 hits: under the floor
+c "fix UTF-8 handling and CVE-2024-1234 and RFC-3339"
+c "another UTF-8 fix";  c "more UTF-8 and CVE-2024-9999 and RFC-2119"
+c "yet more UTF-8, CVE-2024-1111, RFC-1234"
+sniff_out=$(cd "$sn" && "$SUT" sniff)
+
+eq "PROJ" "$(printf '%s\n' "$sniff_out" | awk 'NR==1{print $1}')" \
+   "sniff ranks the most frequent key first"
+eq "4"    "$(printf '%s\n' "$sniff_out" | awk 'NR==1{print $2}')" \
+   "sniff reports the hit count"
+eq "MINOR" "$(printf '%s\n' "$sniff_out" | awk 'NR==2{print $1}')" \
+   "sniff ranks the second key second"
+printf '%s\n' "$sniff_out" | grep -q '^RARE ' \
+  && bad "sniff proposed a candidate under the 3-hit floor" \
+  || ok "sniff suppresses candidates under 3 hits"
+for d in UTF CVE RFC; do
+  printf '%s\n' "$sniff_out" | grep -q "^$d " \
+    && bad "sniff proposed denylisted key $d" \
+    || ok "sniff rejects denylisted $d"
+done
+
+# branch names count toward the ranking, not just commit subjects
+git -C "$sn" branch "BRANCHY-1" >/dev/null 2>&1
+git -C "$sn" branch "BRANCHY-2" >/dev/null 2>&1
+git -C "$sn" branch "BRANCHY-3" >/dev/null 2>&1
+(cd "$sn" && "$SUT" sniff) | grep -q '^BRANCHY 3$' \
+  && ok "sniff counts branch names" || bad "sniff ignored branch names"
+
+# a key mentioned only in a commit BODY still counts
+git -C "$sn" commit -q --allow-empty -m "subject" -m "BODYKEY-1 BODYKEY-2 BODYKEY-3"
+(cd "$sn" && "$SUT" sniff) | grep -q '^BODYKEY 3$' \
+  && ok "sniff reads commit bodies" || bad "sniff ignored commit bodies"
+
+# a repo with no keys at all sniffs clean and does not error
+clean="$tmp/cleanrepo"; mkrepo "$clean" "git@github.com:a/clean.git"
+sn_clean=$(cd "$clean" && "$SUT" sniff); rc=$?
+eq "0"  "$rc" "sniff exits 0 on a repo with no candidates"
+eq ""   "$sn_clean" "sniff prints nothing when there are no candidates"
+
+# sniff respects the git-repo guard
+(cd "$outside" && "$SUT" sniff >/dev/null 2>&1); rc=$?
+eq "3" "$rc" "sniff exits 3 outside a git repo"
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
