@@ -27,8 +27,15 @@ name — so no hardcoded table would survive contact.
 Check for an existing map first:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" get-toolmap
+sdlc-backend.sh get-toolmap
 ```
+
+Call it by bare name, here and everywhere below. The plugin's `bin/` is
+prepended to `PATH`, so the bare name resolves to the plugin's copy from
+any working directory — `which sdlc-backend.sh` confirms it. Do not add a
+path prefix: `bin/sdlc-backend.sh` resolves against the user's repo, and
+`${CLAUDE_PLUGIN_ROOT}` is empty in the Bash tool's environment, which
+would leave `/bin/sdlc-backend.sh`.
 
 If that prints anything but `null` and the names still appear in
 `ToolSearch` results, skip to step 2.
@@ -49,9 +56,11 @@ names actually exist:
          "list_sites":    "mcp__atlassian__getAccessibleAtlassianResources"}}
 ```
 
-Seven slots are required by the adapter; `list_sites` is an eighth,
-optional one used only by step 2 of this file. The names above are one
-server's — they are illustrative, not a table to copy.
+Six of these — `create_issue`, `search`, `get_issue`, `edit_issue`,
+`comment`, `link_issues` — are what the adapter runs on. `list_projects`
+and `list_sites` are used only at bind time, by step 2 of this file, and
+either may be missing on a server pinned to one fixed site. The names
+above are one server's — they are illustrative, not a table to copy.
 
 **Omit a slot with no matching tool; never guess a name.** A missing
 `link_issues` has a defined fallback in `backend-jira.md`; an invented
@@ -60,7 +69,7 @@ tool name just fails later, further from its cause.
 Write it back exactly once:
 
 ```bash
-printf '%s' "$toolmap_json" | "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set-toolmap
+printf '%s' "$toolmap_json" | sdlc-backend.sh set-toolmap
 ```
 
 If the MCP server is present but erroring or unauthenticated, **stop and
@@ -97,14 +106,18 @@ what `ticket_url` actually needs.
 Both values are recorded at bind time so `ticket_url` can build
 `<site>/browse/<REF>` forever after without a live call.
 
-If you can determine neither a site URL nor a project list, **stop and
-report**. Binding a project whose site URL is unknown produces tickets
-nobody can link to.
+**The site is the fatal one.** If you cannot determine a site URL, **stop
+and report** — binding a project whose site is unknown produces tickets
+nobody can link to. A missing or empty `list_projects` is not fatal by
+itself: on a single-fixed-site server there is often nothing to
+disambiguate, so a key from step 3's sniff or typed by the user is
+enough. Without a project list, step 5 simply drops the "a different
+project" menu and asks for a key instead.
 
 ## 3. Sniff the repo's history for a project key
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" sniff
+sdlc-backend.sh sniff
 ```
 
 Output is one `KEY COUNT` per line, most frequent first, over the last
@@ -155,17 +168,17 @@ something it cannot use. `--backend jira` **requires** `--project`, and
 
 ```bash
 # the sniffed key was accepted
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set --backend jira --project PROJ \
+sdlc-backend.sh set --backend jira --project PROJ \
   --cloud-id "$CLOUD_ID" --site "https://acme.atlassian.net" \
   --source git-sniff-confirmed
 
 # a different project was chosen from the list
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set --backend jira --project OTHER \
+sdlc-backend.sh set --backend jira --project OTHER \
   --cloud-id "$CLOUD_ID" --site "https://acme.atlassian.net" \
   --source user-selected
 
 # stay on GitHub
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set --backend github --source user-selected
+sdlc-backend.sh set --backend github --source user-selected
 ```
 
 **Choosing GitHub here *is* cached** — it is an explicit decision, unlike
@@ -173,7 +186,7 @@ a machine with no JIRA MCP, which is never asked and never written. To
 make a repo ask again:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" unset
+sdlc-backend.sh unset
 ```
 
 If `set` exits non-zero, surface its stderr verbatim and stop. Do not
@@ -223,7 +236,8 @@ something else yields a false `use-github` and is never prompted for.
 |---|---|
 | No JIRA MCP configured at all | `resolve` returns `use-github` and **this file is never read**. Nothing is probed, prompted, or cached — so installing a JIRA MCP later still produces this prompt. |
 | MCP present but erroring or unauthenticated | **Stop and report.** Write nothing to the cache; the next run re-asks. Never fall back to GitHub silently. |
-| `list_projects` unavailable or empty | Stop and report — no cloud id and site means no `ticket_url`. |
+| No site URL determinable — no sites tool, and none in the server's own configuration | Stop and report. Without a site there is no `ticket_url`, whatever else is known. |
+| `list_projects` unavailable or empty, but the site is known | Not fatal on its own. A single-fixed-site server has nothing to disambiguate: take the key from `sniff` or ask the user to type one, and drop the project menu from step 5. Stop only if no project key can be established either way. |
 | `sniff` returns nothing | Not an error. Drop the history line from the prompt and offer the project list plus GitHub. |
 | A tool slot has no matching tool | Omit the slot. `backend-jira.md` defines the fallback for a missing `link_issues` and stops for a missing `search`. |
 | Cached tool map is stale — a name no longer appears in `ToolSearch` | **Re-probe, never fail.** Re-run step 1 and `set-toolmap` the fresh names. The adapter sends readers here mid-session for exactly this; a re-probe does not re-prompt and does not touch the repo binding. |

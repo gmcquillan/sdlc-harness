@@ -219,9 +219,9 @@ The JIRA adapter maps those operations through the cached tool map:
 | `create_epic` | `create_issue`, type Epic, summary `[epic] <slug>` |
 | `create_task` | `create_issue`, type Story, `parent` = epic key, label `sdlc:task` |
 | `link_dependency` | `link_issues`, type **Blocks**, blocker → blocked |
-| `list_open_tasks` | JQL `project = K AND labels = "sdlc:task" AND statusCategory != Done`, expanded with issue links, assignee, labels, created |
+| `list_open_tasks` | JQL `project = K AND labels = "sdlc:task" AND statusCategory != Done`, expanded with issue links, labels, description, created |
 | `get_state` | open ⟺ `statusCategory != Done` |
-| `claim` | `edit_issue`: assignee = me, add label `sdlc:in-progress` |
+| `claim` | `edit_issue`: add label `sdlc:in-progress` — the label is the claim |
 | `mark_in_review` | `edit_issue`: `sdlc:in-progress` → `sdlc:in-review` |
 | `comment` | `comment` |
 | `ticket_url` | `<site>/browse/<KEY>` |
@@ -230,6 +230,12 @@ The JIRA adapter maps those operations through the cached tool map:
 what keeps the readiness test working on a project whose terminal state
 is called "Shipped" — and what lets us stay entirely out of custom
 workflow configuration.
+
+**The adapter never sets an assignee.** Atlassian Cloud's `edit_issue`
+wants an accountId, and the bind probe deliberately defines no
+user-lookup slot, so on JIRA the `sdlc:in-progress` label alone
+constitutes a claim — and readiness gates on the absence of that label,
+where the GitHub path still gates on "unassigned".
 
 Ticket references are `#123` on GitHub and `PROJ-123` on JIRA. Skills
 treat a reference as an opaque string.
