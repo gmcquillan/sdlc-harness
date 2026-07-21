@@ -1,13 +1,15 @@
 # Binding a repo to a ticket backend
 
-Read this file **only** when `bin/sdlc-backend.sh resolve` reported
+Read this file **only** when `sdlc-backend.sh resolve` reported
 `action: bind-needed`, which happens at most once per repo. It means a
 JIRA-looking MCP server is configured **and** this repo has no recorded
 binding. It does **not** mean JIRA is reachable — step 1 establishes
 that.
 
 Every worktree of a repo shares one binding, because the cache is keyed
-by the origin remote rather than by working-directory path.
+by the origin remote rather than by working-directory path (and, for a
+repo with no origin, by the main repository's git directory — which
+every worktree also shares).
 
 Work through the steps in order, then continue the run with
 `references/backend-jira.md` (or with the skill's inline `gh` commands,
@@ -25,7 +27,7 @@ name — so no hardcoded table would survive contact.
 Check for an existing map first:
 
 ```bash
-bin/sdlc-backend.sh get-toolmap
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" get-toolmap
 ```
 
 If that prints anything but `null` and the names still appear in
@@ -43,8 +45,13 @@ names actually exist:
          "edit_issue":    "mcp__atlassian__editJiraIssue",
          "comment":       "mcp__atlassian__addCommentToJiraIssue",
          "link_issues":   "mcp__atlassian__createJiraIssueLink",
-         "list_projects": "mcp__atlassian__getVisibleJiraProjects"}}
+         "list_projects": "mcp__atlassian__getVisibleJiraProjects",
+         "list_sites":    "mcp__atlassian__getAccessibleAtlassianResources"}}
 ```
+
+Seven slots are required by the adapter; `list_sites` is an eighth,
+optional one used only by step 2 of this file. The names above are one
+server's — they are illustrative, not a table to copy.
 
 **Omit a slot with no matching tool; never guess a name.** A missing
 `link_issues` has a defined fallback in `backend-jira.md`; an invented
@@ -53,32 +60,51 @@ tool name just fails later, further from its cause.
 Write it back exactly once:
 
 ```bash
-printf '%s' "$toolmap_json" | bin/sdlc-backend.sh set-toolmap
+printf '%s' "$toolmap_json" | "${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set-toolmap
 ```
 
 If the MCP server is present but erroring or unauthenticated, **stop and
 report**. Write nothing — no tool map, no binding — so the next run
 re-asks instead of inheriting a half-made decision.
 
-## 2. Capture the cloud id and site
+## 2. Capture the cloud id and site, then list projects
 
-Call `toolmap.ops.list_projects` once. Keep two values from the
-response alongside the project list:
+**Order matters here, and it is the reverse of what you might expect.**
+On the official Atlassian remote server, `list_projects`
+(`getVisibleJiraProjects`) *requires* a `cloudId` argument — so the cloud
+id cannot come out of that response. It comes from a sites/resources tool
+(`getAccessibleAtlassianResources` on that server), which returns the
+accessible sites with their `id` and `url`.
 
-- **cloud id** — the Atlassian cloud identifier
-- **site** — the base URL, e.g. `https://acme.atlassian.net`
+So:
 
-Both are recorded at bind time so `ticket_url` can build
+1. From the same `ToolSearch` probe as step 1, find the tool that lists
+   accessible Atlassian sites and call it. Record its `id` as the **cloud
+   id** and its `url` as the **site** (e.g. `https://acme.atlassian.net`).
+   If more than one site is accessible, ask which to use rather than
+   picking the first.
+2. Cache that tool under an eighth, **optional** slot, `list_sites`, so a
+   later re-probe does not have to rediscover it.
+3. Pass the cloud id to `toolmap.ops.list_projects` to get the project
+   list for step 5.
+
+Some servers have no such tool because they are configured against a
+single fixed site — the community `mcp-atlassian` takes a base URL in its
+own configuration. There, take the site from that configuration and leave
+the cloud id empty; `--cloud-id` is optional on `set`, while `--site` is
+what `ticket_url` actually needs.
+
+Both values are recorded at bind time so `ticket_url` can build
 `<site>/browse/<REF>` forever after without a live call.
 
-If `list_projects` is unavailable or returns nothing, **stop and
+If you can determine neither a site URL nor a project list, **stop and
 report**. Binding a project whose site URL is unknown produces tickets
 nobody can link to.
 
 ## 3. Sniff the repo's history for a project key
 
 ```bash
-bin/sdlc-backend.sh sniff
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" sniff
 ```
 
 Output is one `KEY COUNT` per line, most frequent first, over the last
@@ -101,6 +127,10 @@ gh issue list --label "sdlc:task" --state open --json number | jq length
 
 A non-zero count goes into the prompt **and makes GitHub the default
 answer**, so nobody strands a half-built epic across two systems.
+
+If that command fails — no GitHub remote, `gh` unauthenticated — treat
+the count as zero, say so in the prompt, and carry on. This check is a
+safeguard against splitting an epic, not a precondition for binding.
 
 ## 5. Ask — once
 
@@ -125,17 +155,17 @@ something it cannot use. `--backend jira` **requires** `--project`, and
 
 ```bash
 # the sniffed key was accepted
-bin/sdlc-backend.sh set --backend jira --project PROJ \
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set --backend jira --project PROJ \
   --cloud-id "$CLOUD_ID" --site "https://acme.atlassian.net" \
   --source git-sniff-confirmed
 
 # a different project was chosen from the list
-bin/sdlc-backend.sh set --backend jira --project OTHER \
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set --backend jira --project OTHER \
   --cloud-id "$CLOUD_ID" --site "https://acme.atlassian.net" \
   --source user-selected
 
 # stay on GitHub
-bin/sdlc-backend.sh set --backend github --source user-selected
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" set --backend github --source user-selected
 ```
 
 **Choosing GitHub here *is* cached** — it is an explicit decision, unlike
@@ -143,7 +173,7 @@ a machine with no JIRA MCP, which is never asked and never written. To
 make a repo ask again:
 
 ```bash
-bin/sdlc-backend.sh unset
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" unset
 ```
 
 If `set` exits non-zero, surface its stderr verbatim and stop. Do not

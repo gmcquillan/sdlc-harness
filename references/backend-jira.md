@@ -1,6 +1,6 @@
 # JIRA adapter
 
-Read this file **only** when `bin/sdlc-backend.sh resolve` reported
+Read this file **only** when `sdlc-backend.sh resolve` reported
 `action: use-jira`. On `use-github` the pipeline skills are already
 complete as written and this file is not read at all — that is the point
 of the design, not an accident. On `bind-needed`, read
@@ -22,31 +22,53 @@ operation it implements:
 ```
 
 On JIRA, run this file's definition for that operation **instead of** the
-tagged block. Everything else in the skill — its ordering, its gates, its
-report formats — is unchanged.
+tagged command. Everything else in the skill — its ordering, its gates,
+its report formats — is unchanged.
 
-**Untagged `gh` blocks always run exactly as written.** Those are the
-GitHub-side operations: `gh pr create`, `gh pr view`, `gh pr review`,
-`gh pr checkout`, and `gh auth status`. A JIRA binding never suppresses
-them.
+Three rules make that unambiguous, because the skills' fenced blocks mix
+GitHub-side and ticket-side commands:
+
+1. **A tag marks a command, not a whole fenced block.** `implement`
+   step 11 is one block holding `git push`, `gh pr create`,
+   `gh issue edit`, and `gh issue comment`; only the last two are
+   ticketing operations. Substitute those two and leave the rest of the
+   block running exactly as written.
+2. **One command may carry several tags** — run every tagged operation.
+   `ticket` step 6's single `gh issue create` implements `create_task`
+   *and*, through its `## Depends on` section, `link_dependency`. On
+   JIRA that is two calls: create the Story, then link it.
+3. **Untagged commands always run exactly as written**, even when they
+   share a block with a tagged one. Those are the GitHub-side
+   operations: `gh pr create`, `gh pr view`, `gh pr review`,
+   `gh pr checkout`, and `gh auth status`. A JIRA binding never
+   suppresses them.
 
 Where the tags live:
 
-| Operation | Tagged block |
+| Operation | Tagged command |
 |---|---|
-| `create_epic` | `ticket` step 5, and the epic-body backfill in step 7 |
-| `create_task` | `ticket` step 6; `review` step 5 tiers B and C |
+| `create_epic` | `ticket` step 2 (the idempotency search), step 5, and the epic-body backfill in step 7 |
+| `create_task` | `ticket` step 6; `review` step 5 tier B (tier C creates a tier-B-style ticket through the same block) |
 | `link_dependency` | `ticket` step 6; `review` step 5 tier B |
-| `list_open_tasks` | `next` step 2; `implement` step 1; `ticket` step 2 (idempotency) |
-| `get_state` | `next` step 2; `implement` step 1; `resume` step 3 |
+| `list_open_tasks` | `next` step 2; `implement` step 1 |
+| `get_state` | `next` step 2; `implement` step 1; `review` step 1; `resume` step 3 |
 | `claim` | `implement` step 3 |
 | `mark_in_review` | `implement` step 11 |
 | `comment` | `implement` step 11 |
 | `ticket_url` | `implement` step 11 PR body; `review` step 1 |
 
-`gh label create` in `ticket` step 3 has **no JIRA counterpart** — JIRA
-labels come into existence when first applied. Skip that block entirely;
-do not attempt to pre-create labels.
+`ticket` step 2 is tagged `create_epic`, **not** `list_open_tasks`: it
+searches for an existing *epic* across all states, which
+`list_open_tasks` — scoped to open `sdlc:task` issues — can never
+return. Routing it to `list_open_tasks` would make the check answer
+"none" every time and file a duplicate epic on every run. Its JQL is
+defined under `create_epic` below.
+
+One deliberate exception to rule 3: **`gh label create` in `ticket`
+step 3 is untagged but must be skipped.** JIRA labels come into
+existence when first applied, so there is nothing to pre-create, and
+running it would create four unused labels in the GitHub repo. Skip that
+block; do not invent a JIRA equivalent.
 
 ## Resolving tools
 
@@ -54,14 +76,20 @@ The tool map is global to the machine and cached, because different JIRA
 MCP servers name their tools differently and the MCP prefix depends on
 the local server name.
 
-```bash
-bin/sdlc-backend.sh get-toolmap
-```
-
-That prints the cached object — `{server, probed_at, ops:{…}}` — or the
-literal `null`. Resolve every operation below through
+**Use the `toolmap` you already hold from `resolve`.** It is the same
+object — `{server, probed_at, ops:{…}}` — and re-reading it costs a
+process for nothing. Resolve every operation below through
 `toolmap.ops.<slot>`; the slots are `create_issue`, `search`,
 `get_issue`, `edit_issue`, `comment`, `link_issues`, and `list_projects`.
+
+Only after a mid-session re-probe (below) do you need to read it back:
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh" get-toolmap
+```
+
+That prints the cached object, or the literal `null` when none is
+cached.
 
 Before the first call of a session, confirm those cached tool names
 appear in `ToolSearch` results. **If a cached name is absent, re-probe**
@@ -113,13 +141,19 @@ tool: toolmap.ops.create_issue
   labels:     ["sdlc:task"]
   summary:    <task title>
   description: ## Context … ## Acceptance criteria … ## Scope …
-               ## Depends on … ## Out of scope … ## Epic <epic key>
+               ## Depends on … ## Out of scope …
+               ## Epic
+               <epic key>
 ```
 
 Keep every `##` section the GitHub path writes, including `## Depends on`
 — humans read it on both backends. On JIRA the **authoritative**
 dependency edge is the Blocks link from `link_dependency`; the prose is
 the readable copy.
+
+Keep the *layout* too, not just the headings: the reference goes on the
+line **under** `## Epic`, never on the heading line, because `review`
+step 5 resolves the epic by reading the ref under that heading.
 
 If the server rejects `parent` (some projects are not
 team-managed, and classic projects use an Epic Link custom field
@@ -139,6 +173,13 @@ Direction matters: blocker → blocked. `next` reads these back as inbound
 "is blocked by" links, so a reversed link inverts the whole leverage
 graph.
 
+`inward`/`outward` are the one field pair whose meaning you cannot infer
+from the name, and servers disagree about which is which. **Do not trust
+the naming — check the result.** After the call, the *blocked* ticket
+must display **is blocked by** `<blocker>`. If it instead shows
+**blocks**, the arguments are swapped: reverse them and re-link. Confirm
+this once per server, not once per link.
+
 ### `list_open_tasks`
 
 ```
@@ -152,16 +193,24 @@ Scoped to one epic (`sdlc:next <epic ref>`), add
 
 The caller is always a subagent. **Normalize inside that subagent** to the
 node shape the main loop expects — `{ref, title, dependsOn, inProgress,
-inReview, assigned, ops, createdAt}` — where `dependsOn` is the list of
+inReview, assigned, ops, createdAt}` (`sdlc:next` currently names that
+first field `number`; T4 generalizes it to `ref` for both backends) —
+where `dependsOn` is the list of
 inbound "is blocked by" refs and `inProgress` / `inReview` / `ops` are
 label tests. Raw JIRA issue-link JSON must never reach the main loop;
 avoiding that is the entire reason the gather step is delegated.
 
 ### `get_state`
 
+Reads one ticket. This is also the **only** operation that fetches a
+ticket's contents, so it serves every "go look at that ticket" step in
+the pipeline — `review` step 1 reading acceptance criteria out of the
+description, and `implement` step 1 reading `## Depends on`:
+
 ```
 tool: toolmap.ops.get_issue
   ref: <ticket ref>
+returns: status category, labels, assignee, summary, description
 ```
 
 **Open ⟺ `statusCategory != Done`. Never test a status name.** Projects
@@ -247,7 +296,7 @@ ticket stays open until you move it."*
 | `toolmap.ops.search` is unset | Stop and report. Without search there is no `list_open_tasks`, no idempotency check, and `next` cannot rank anything. |
 | `resolve` said `use-github` but this file was opened | Something mis-routed. Stop, re-run `resolve`, and follow its `action`. |
 | Ticket ref not found, or `project` does not exist | Stop and report. Do **not** create a replacement ticket — a wrong-project ticket is invisible work. |
-| `site` or `project` is null on a `use-jira` binding | The cache entry is incomplete. Stop and report; `bin/sdlc-backend.sh unset` makes the next run re-bind. |
+| `site` or `project` is null on a `use-jira` binding | The cache entry is incomplete. Stop and report; `sdlc-backend.sh unset` makes the next run re-bind. |
 
 ## Red flags
 
