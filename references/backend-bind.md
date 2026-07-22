@@ -1,19 +1,26 @@
 # Binding a repo to a ticket backend
 
-Read this file **only** when `sdlc-backend.sh resolve` reported
-`action: bind-needed`, which happens at most once per repo. It means a
-JIRA-looking MCP server is configured **and** this repo has no recorded
-binding. It does **not** mean JIRA is reachable — step 1 establishes
-that.
+Read this file in one of two situations, and only these:
+
+- **A first bind.** `sdlc-backend.sh resolve` reported
+  `action: bind-needed`, which happens at most once per repo. It means a
+  JIRA-looking MCP server is configured **and** this repo has no recorded
+  binding. It does **not** mean JIRA is reachable — step 2's first live
+  call establishes that. Work through every step below.
+- **A mid-session re-probe.** A cached tool name has stopped appearing in
+  `ToolSearch` — the user upgraded their Atlassian MCP and a tool was
+  renamed — and `references/backend-jira.md` sent you back here. Run
+  **step 1 only**, write the refreshed map, and resume where you left
+  off. A re-probe re-prompts nothing and touches no binding.
 
 Every worktree of a repo shares one binding, because the cache is keyed
 by the origin remote rather than by working-directory path (and, for a
 repo with no origin, by the main repository's git directory — which
 every worktree also shares).
 
-Work through the steps in order, then continue the run with
-`references/backend-jira.md` (or with the skill's inline `gh` commands,
-if the answer was GitHub).
+On a first bind, work through the steps in order, then continue the run
+with `references/backend-jira.md` (or with the skill's inline `gh`
+commands, if the answer was GitHub).
 
 ## 1. Probe the tool map
 
@@ -61,20 +68,37 @@ Six of these — `create_issue`, `search`, `get_issue`, `edit_issue`,
 and `list_sites` are used only at bind time, by step 2 of this file, and
 either may be missing on a server pinned to one fixed site. The names
 above are one server's — they are illustrative, not a table to copy.
+`probed_at` is a human-readable breadcrumb and nothing more: no code
+path reads it, and staleness is decided solely by whether a cached name
+still appears in `ToolSearch`, never by that date's age.
 
 **Omit a slot with no matching tool; never guess a name.** A missing
 `link_issues` has a defined fallback in `backend-jira.md`; an invented
 tool name just fails later, further from its cause.
 
-Write it back exactly once:
+### Writing the map back
 
 ```bash
 printf '%s' "$toolmap_json" | sdlc-backend.sh set-toolmap
 ```
 
-If the MCP server is present but erroring or unauthenticated, **stop and
-report**. Write nothing — no tool map, no binding — so the next run
+`set-toolmap` **replaces** the stored map; it does not merge into it
+(`.jira_toolmap = $tm`). So every write must carry the *complete* object.
+Piping in a one-slot fragment wipes the other seven, and the next session
+finds the names missing and silently re-probes.
+
+**On a first bind, do not run that command yet.** `ToolSearch` reports
+tool names whether or not the server is authenticated, so the probe alone
+proves nothing about reachability; step 2's sites lookup is the first
+live call. The single write belongs at the end of step 2 — by then the
+server has answered and `list_sites` is confirmed. If the server turns
+out to be present but erroring or unauthenticated, **stop and report**:
+nothing has been written — no tool map, no binding — so the next run
 re-asks instead of inheriting a half-made decision.
+
+**On a mid-session re-probe**, the binding already exists and the server
+has already been answering, so write straight away — re-emitting every
+slot, not just the renamed one — and go back to what you were doing.
 
 ## 2. Capture the cloud id and site, then list projects
 
@@ -92,19 +116,34 @@ So:
    id** and its `url` as the **site** (e.g. `https://acme.atlassian.net`).
    If more than one site is accessible, ask which to use rather than
    picking the first.
-2. Cache that tool under an eighth, **optional** slot, `list_sites`, so a
-   later re-probe does not have to rediscover it.
+2. Record that tool in the map's eighth, **optional** slot, `list_sites`,
+   so a later re-probe does not have to rediscover it.
 3. Pass the cloud id to `toolmap.ops.list_projects` to get the project
    list for step 5.
+4. That call succeeding is the proof step 1 was waiting for, so now write
+   the map — once, complete, all the slots you filled — with the
+   `set-toolmap` command in step 1. If step 1 found a usable cached map
+   and you skipped the probe, there is nothing new to write; leave it
+   alone.
 
 Some servers have no such tool because they are configured against a
 single fixed site — the community `mcp-atlassian` takes a base URL in its
-own configuration. There, take the site from that configuration and leave
-the cloud id empty; `--cloud-id` is optional on `set`, while `--site` is
-what `ticket_url` actually needs.
+own configuration and never asks for a cloud id at all. There, take the
+site from that configuration and leave the cloud id empty; `--cloud-id`
+is optional on `set`.
 
-Both values are recorded at bind time so `ticket_url` can build
-`<site>/browse/<REF>` forever after without a live call.
+Both values are recorded because each has its own job later, and neither
+substitutes for the other:
+
+- The **site** is what `ticket_url` builds `<site>/browse/<REF>` from,
+  forever after without a live call. It is the only one `ticket_url`
+  needs.
+- The **cloud id** is a *call* argument. The official Atlassian remote
+  server requires a `cloudId` on essentially every Jira tool call, which
+  is why it must be on hand at runtime rather than looked up each time;
+  the community server takes none. Pass it only if the tool's schema
+  takes one. The official server also accepts a site URL as the `cloudId`
+  value, so `site` can stand in when the cloud id is empty.
 
 **The site is the fatal one.** If you cannot determine a site URL, **stop
 and report** — binding a project whose site is unknown produces tickets
@@ -240,7 +279,7 @@ something else yields a false `use-github` and is never prompted for.
 | `list_projects` unavailable or empty, but the site is known | Not fatal on its own. A single-fixed-site server has nothing to disambiguate: take the key from `sniff` or ask the user to type one, and drop the project menu from step 5. Stop only if no project key can be established either way. |
 | `sniff` returns nothing | Not an error. Drop the history line from the prompt and offer the project list plus GitHub. |
 | A tool slot has no matching tool | Omit the slot. `backend-jira.md` defines the fallback for a missing `link_issues` and stops for a missing `search`. |
-| Cached tool map is stale — a name no longer appears in `ToolSearch` | **Re-probe, never fail.** Re-run step 1 and `set-toolmap` the fresh names. The adapter sends readers here mid-session for exactly this; a re-probe does not re-prompt and does not touch the repo binding. |
+| Cached tool map is stale — a name no longer appears in `ToolSearch` | **Re-probe, never fail.** Re-run step 1 and `set-toolmap` the fresh names, re-emitting every slot (the write replaces, it does not merge). The adapter sends readers here mid-session for exactly this; a re-probe does not re-prompt and does not touch the repo binding. |
 | Server named unrecognizably (no `jira`/`atlassian` in its name) | `resolve` yields a false `use-github`. Escape hatch: `--backend jira` on the invocation, or a manual `sdlc-backend.sh set`. |
 | `set` exits 2 | Surface stderr verbatim and stop. Most likely a `jira` binding with no `--project`, or a `--source` outside the two accepted values. |
 | Repo has open GitHub `sdlc:task` issues | Report the count in the prompt and default to GitHub. |
@@ -253,6 +292,8 @@ something else yields a false `use-github` and is never prompted for.
 - Re-filtering `sniff` output — the denylist and the 3-hit floor are the
   script's job, and duplicating them means two places to keep correct.
 - Guessing a tool name for an empty slot instead of omitting it.
+- Piping a partial map into `set-toolmap` — it replaces the stored
+  object, so a fragment silently erases every slot it omits.
 - Caching a binding when the MCP errored — a wrong binding is silent and
   long-lived.
 - Binding to JIRA without checking for open GitHub `sdlc:task` issues.

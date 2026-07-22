@@ -91,6 +91,12 @@ choice.
   on each inline `gh` block, and the nine operation definitions those
   tags resolve to. T3–T7 depend on these exact names.
 
+  > **Superseded (commit bc4eea9) — historical record, not current guidance.**
+  > The `<!-- op: … -->` marker layer was dropped. The skill → operation
+  > mapping now lives in the routing table under "How to use this file" at
+  > the top of `references/backend-jira.md`, keyed by skill · step ·
+  > command. The nine operation names themselves are unchanged.
+
 - [ ] **Step 1: Write the file**
 
 Required contents, in order:
@@ -106,6 +112,12 @@ Required contents, in order:
    blocks (PR operations — `gh pr create`, `gh pr review`,
    `gh pr checkout`, `gh pr view`) are GitHub-side and **always run
    as written**, because code review never moves to JIRA.
+
+   > **Superseded (commit bc4eea9):** no `gh` block is tagged. The
+   > substitution rule is now driven by the routing table at the top of
+   > `references/backend-jira.md`; commands not named in that table run as
+   > written, which covers the PR operations listed above.
+
 3. **Tool resolution** — a fenced block showing the read:
    ```
    toolmap=$(bin/sdlc-backend.sh get-toolmap)
@@ -156,6 +168,15 @@ Required contents, in order:
 
 Run from the worktree root:
 
+> **Superseded assertion (commit bc4eea9) — do not "fix" it.** The
+> `<!-- op:` grep below is obsolete: the marker vocabulary was dropped in
+> favor of the routing table at the top of `references/backend-jira.md`.
+> On the shipped files it is **expected** to fail, so it is commented out
+> and left in place as part of the record. Re-enabling it, or
+> reintroducing `<!-- op: … -->` markers into `references/` or `skills/`
+> to satisfy it, reverses a deliberate design decision. Every other
+> assertion in this block still holds.
+
 ```bash
 test -f references/backend-jira.md || echo "FAIL: file missing"
 test ! -e references/backend-github.md || echo "FAIL: github adapter must not exist"
@@ -169,7 +190,9 @@ for slot in create_issue search get_issue edit_issue comment link_issues; do
 done
 grep -q 'statusCategory != Done' references/backend-jira.md || echo "FAIL: open test"
 grep -q 'Blocks' references/backend-jira.md || echo "FAIL: Blocks link type"
-grep -q '<!-- op:' references/backend-jira.md || echo "FAIL: op tag vocabulary"
+# SUPERSEDED bc4eea9 — op tags dropped for the routing table. Kept for the
+# record; must stay commented out. Do not re-add markers to satisfy it.
+# grep -q '<!-- op:' references/backend-jira.md || echo "FAIL: op tag vocabulary"
 grep -q '/browse/' references/backend-jira.md || echo "FAIL: ticket_url form"
 ```
 
@@ -374,6 +397,10 @@ git commit -m "docs(jira): close failure-mode and vocabulary gaps found in audit
 
 - Editing any `skills/*/SKILL.md`, including adding `<!-- op: … -->` tags
   — that is T3–T7. This task only *defines* the tag vocabulary.
+
+  > **Superseded (commit bc4eea9):** there are no tags to add. T4–T7 folded
+  > into T3, and the mapping lives in the routing table at the top of
+  > `references/backend-jira.md` instead of in the skills.
 - `tests/validate-skills.sh` assertions, `README.md`, `plugin.json` 0.5.0
   — all T8.
 - Any live MCP call or JIRA instance interaction — T9, manual.
