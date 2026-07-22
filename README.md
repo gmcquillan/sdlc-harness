@@ -56,6 +56,8 @@ From within Claude Code:
   (`gh auth login`)
 - `jq`
 - `uuidgen` (from `util-linux`; used for handoff filenames)
+- *(optional)* a JIRA MCP server — only if you want tickets in JIRA instead
+  of GitHub Issues; see [Ticket backends](#ticket-backends)
 - The [`superpowers`](https://github.com/obra/superpowers) and
   `fable-harness` plugins — the skills here wrap their brainstorming,
   planning, TDD, worktree, and fan-out primitives.
@@ -84,6 +86,28 @@ command; most run best in a fresh session.
 At any point, `/sdlc:handoff` and `/sdlc:resume` bridge a session that's
 running out of context, and `/sdlc:cleanup` reclaims stale worktrees and
 branches once work has merged.
+
+## Ticket backends
+
+Tickets live in GitHub Issues by default. Every ticket-touching skill —
+`ticket`, `next`, `implement`, `review` — opens with a step 0 that runs
+`bin/sdlc-backend.sh resolve` and branches on the result. **On the GitHub
+path that is the entire cost: one bash call, then the skill continues with
+its `gh` commands inline.** No adapter file is read, no wrapper sits between
+the skill and `gh`.
+
+A JIRA MCP server is an *optional* alternative. When one is connected and
+you bind the repo to it, `resolve` returns `use-jira` and the skills follow
+`references/backend-jira.md`, which maps each operation onto the cached tool
+map; `references/backend-bind.md` covers the first-run binding prompt. The
+binding is cached per repo, so the probe runs once, not once per skill.
+
+`tests/validate-skills.sh` enforces the split: step 0 must call the
+resolver, both reference files must exist, no `references/backend-github.md`
+may appear, and the five skills that shell out to `gh` — `ticket`, `next`,
+`implement`, `review`, `resume` — must not lose inline `gh` commands. A new
+skill that shells out to `gh` needs its own floor entry to get this
+protection.
 
 ## Skills
 
@@ -114,7 +138,9 @@ branches once work has merged.
     for t in tests/test-*.sh tests/validate-skills.sh; do bash "$t"; done
 
 The tests cover the hooks (context tripwire thresholds, handoff pickup,
-lint-before-push detection) and validate every skill's frontmatter.
+lint-before-push detection), the backend resolver (`bin/sdlc-backend.sh`),
+and validate every skill's frontmatter plus the ticket-backend invariants
+described under [Ticket backends](#ticket-backends).
 
 ## Design docs
 

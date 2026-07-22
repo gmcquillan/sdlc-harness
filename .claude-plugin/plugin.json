@@ -1,7 +1,7 @@
 {
   "name": "sdlc",
   "description": "Human-gated SDLC pipeline for Claude Code: interview→spec, spec→GitHub issues, issue→implementation branch, PR review — with a 150k context tripwire and session handoff. Wraps superpowers and fable-harness skills.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": {
     "name": "Gavin McQuillan",
     "email": "gavin.mcquillan@gmail.com"
@@ -9,5 +9,5 @@
   "license": "MIT",
   "homepage": "https://github.com/gmcquillan/sdlc-harness",
   "repository": "https://github.com/gmcquillan/sdlc-harness",
-  "keywords": ["sdlc", "workflow", "github-issues", "context-management", "handoff", "hooks"]
+  "keywords": ["sdlc", "workflow", "github-issues", "jira", "context-management", "handoff", "hooks"]
 }
