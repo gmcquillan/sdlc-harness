@@ -33,7 +33,15 @@ pipeline="ticket next implement review"
 for name in $pipeline; do
   f="$root/skills/$name/SKILL.md"
   if [ ! -f "$f" ]; then bad "$name: SKILL.md missing (step 0)"; continue; fi
-  step0=$(awk 'n && /^1\. /{exit} /^0\. /{n=1} n' "$f")
+  # Capture the FIRST 0.-block, and only if a step 1 closes it — a real
+  # checklist step 0 is always followed by step 1. Without that guard, a
+  # skill that lost its step 0 still passes on any later stray "0. " line
+  # that happens to name the resolver.
+  step0=$(awk '
+    n && /^1\. / { printf "%s", buf; exit }
+    /^0\. / && !n { n=1 }
+    n { buf = buf $0 "\n" }
+  ' "$f")
   if [ -z "$step0" ]; then
     bad "$name: no step 0 block"
   elif printf '%s\n' "$step0" | grep -q 'sdlc-backend\.sh resolve'; then
