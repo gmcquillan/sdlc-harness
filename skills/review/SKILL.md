@@ -10,11 +10,15 @@ verdicts, and judgment. Create a todo per checklist item.
 
 ## Checklist
 
+0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
+   continue below unchanged; on `use-jira` read and follow the plugin's
+   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Gather metadata (main loop, small):**
    `gh pr view <PR#> --json title,body,headRefName,files` — extract the
-   linked issue from `Closes #<n>`, then
-   `gh issue view <n> --json body` for the acceptance criteria and spec
-   pointer. Do NOT fetch the diff into this context.
+   linked ticket ref from the PR body — on GitHub the bare `<n>` of
+   `Closes #<n>` — then `gh issue view <n> --json body` for the
+   acceptance criteria and spec pointer. Do NOT fetch the diff into this
+   context.
 2. **Fan out reviewers** per `fable-harness:fan-out` — three subagents,
    ALL dispatched in a single message, each given the PR number, the
    acceptance criteria, and ONE dimension:
@@ -73,7 +77,7 @@ verdicts, and judgment. Create a todo per checklist item.
      branch (`git push`) so the updated PR is what step 2 re-reviews, then
      re-run this checklist from step 2.
    - **Tier B:** resolve the epic from the reviewed issue's `## Epic`
-     section (the `#<n>` under that heading), then create a child issue in
+     section (the ref under that heading), then create a child issue in
      the same section format `sdlc:task` issues use, so `sdlc:next` /
      `sdlc:implement` pick it up:
 
@@ -97,7 +101,7 @@ verdicts, and judgment. Create a todo per checklist item.
      ```
    - **Tier C:** `gh pr review <PR#> --request-changes` with the summary,
      create a Tier-B-style `sdlc:task` for the redo, and recommend
-     `/sdlc:implement <issue#>` in a fresh session. Do NOT patch the branch.
+     `/sdlc:implement <ref>` in a fresh session. Do NOT patch the branch.
 
    Report what was fixed, the URLs of any tickets created, and any redo
    recommendation.

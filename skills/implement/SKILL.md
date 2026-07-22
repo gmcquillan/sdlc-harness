@@ -1,9 +1,9 @@
 ---
 name: implement
-description: Use when an sdlc:task GitHub issue is ready to build — claims the issue, maps the subsystem via scouts, branches in a worktree, plans, executes with TDD in fresh subagents, self-reviews, and opens a PR. Never merges. Invoke as sdlc:implement [issue#].
+description: Use when an sdlc:task ticket is ready to build — claims the ticket, maps the subsystem via scouts, branches in a worktree, plans, executes with TDD in fresh subagents, self-reviews, and opens a PR. Never merges. Invoke as sdlc:implement [ref].
 ---
 
-# SDLC Implement: Issue → PR
+# SDLC Implement: Ticket → PR
 
 The workhorse. Context discipline governs every step: **the main loop
 holds judgment and state transitions; breadth goes to subagents.** If a
@@ -13,12 +13,16 @@ per checklist item.
 
 ## Checklist
 
+0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
+   continue below unchanged; on `use-jira` read and follow the plugin's
+   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Select the issue.** Argument given → use it. None → list candidates:
    `gh issue list --label "sdlc:task" --state open --json
    number,title,body,labels,assignees` and pick the first that is (a) not
    labeled `sdlc:in-progress` or `sdlc:in-review`, (b) unassigned, and
-   (c) unblocked — every `#ref` under its `## Depends on` heading is
-   CLOSED (`gh issue view <ref> --json state`). No candidate → report why
+   (c) unblocked — every ref under its `## Depends on` heading is
+   CLOSED (`gh issue view <ref> --json state`; that section writes GitHub
+   refs as `#123`, so pass them bare). No candidate → report why
    each open task is blocked and stop.
 2. **Preconditions:** clean `git status`; `gh auth status` succeeds.
    Either failure → stop and report. Then **sync the base branch with
@@ -34,7 +38,8 @@ per checklist item.
    subagents map the affected subsystem; only their maps return to you.
    Do NOT read the subsystem file-by-file yourself.
 5. **Isolate.** Invoke `superpowers:using-git-worktrees`; branch
-   `sdlc/<issue#>-<slug>` (slug = kebab-cased issue title, ≤5 words).
+   `sdlc/<ref>-<slug>` (slug = kebab-cased ticket title, ≤5 words) — so
+   `sdlc/42-add-widget` or `sdlc/PROJ-123-add-widget`.
 6. **Plan.** Invoke `superpowers:writing-plans` for a per-issue plan
    scoped to the acceptance criteria; save under `docs/plans/` and COMMIT
    it to the branch — plans must survive handoffs and session death.
@@ -59,7 +64,7 @@ per checklist item.
 11. **Deliver.**
 
     ```bash
-    git push -u origin "sdlc/<issue#>-<slug>"
+    git push -u origin "sdlc/<ref>-<slug>"
     gh pr create --title "<issue title>" --body "Closes #<issue>
 
     Epic: #<epic> · Spec: \`<spec-path>\` §T<n>
