@@ -5,8 +5,10 @@ description: Use when a repo has accumulated stale worktrees, merged/orphaned lo
 
 # SDLC Cleanup: reclaim stale worktrees & branches
 
-`sdlc:implement` leaves an `sdlc/<issue#>-<slug>` branch and a worktree
-per issue. After PRs merge (usually squash-merged, so the remote branch
+`sdlc:implement` leaves an `sdlc/<ref>-<slug>` branch and a worktree
+per ticket, where `<ref>` is a GitHub issue number or a JIRA key — so
+both `sdlc/42-add-widget` and `sdlc/PROJ-123-add-widget` are in scope.
+After PRs merge (usually squash-merged, so the remote branch
 is deleted), those linger. This skill reclaims them — safely, behind a
 human gate. It operates on the LOCAL workspace only; it never touches
 remotes and never deletes uncommitted work. Create a todo per checklist
