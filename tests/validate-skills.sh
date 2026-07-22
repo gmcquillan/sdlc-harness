@@ -23,5 +23,24 @@ for name in $expected; do
     *) bad "$name: description must begin 'Use when'" ;;
   esac
 done
+
+# --- step 0 resolves the ticket backend (spec T3, T8) -------------------
+# The GitHub path must cost exactly one bash call, so each ticket-touching
+# skill resolves the backend in step 0 and branches on the action. Look
+# only inside the step-0 block: a mention elsewhere in the file does not
+# satisfy this.
+pipeline="ticket next implement review"
+for name in $pipeline; do
+  f="$root/skills/$name/SKILL.md"
+  if [ ! -f "$f" ]; then bad "$name: SKILL.md missing (step 0)"; continue; fi
+  step0=$(awk '/^0\. /{n=1} /^1\. /{n=0} n' "$f")
+  if [ -z "$step0" ]; then
+    bad "$name: no step 0 block"
+  elif printf '%s\n' "$step0" | grep -q 'sdlc-backend\.sh resolve'; then
+    ok "$name: step 0 resolves the backend"
+  else
+    bad "$name: step 0 does not run sdlc-backend.sh resolve"
+  fi
+done
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
