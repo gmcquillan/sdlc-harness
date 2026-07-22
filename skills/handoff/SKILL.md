@@ -45,8 +45,9 @@ the single source of truth; every pickup mechanism reads the same format.
    <interview|ticket|implement|review> — step <N> of the skill checklist
 
    ## Refs
-   - Issue: #<n> / PR: #<n> / Epic: #<n>
-   - Branch: sdlc/<issue#>-<slug>
+   - Ticket: <ref> / PR: #<n> / Epic: <ref>
+   - Backend: <github|jira>
+   - Branch: sdlc/<ref>-<slug>
    - Worktree: <$wt from above — the worktree's absolute path, or "main">
    - Spec: docs/specs/<file>.md
    - Plan: <path, if one exists>
@@ -58,7 +59,7 @@ the single source of truth; every pickup mechanism reads the same format.
    ## State
    - Last commit: <hash> <subject>
    - Stash: <name or "none">
-   - Labels set: <e.g. sdlc:in-progress on #12>
+   - Labels set: <e.g. sdlc:in-progress on <ref>>
 
    ## Next
    1. <Ordered, imperative, specific actions. "Implement the retry branch
