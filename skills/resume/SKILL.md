@@ -30,8 +30,11 @@ checklist item.
    - Ticket labels as recorded? Read the `Backend:` line in `## Refs`.
      On `github`, or with no such line, run
      `gh issue view <n> --json labels`. On any other backend run
-     `sdlc-backend.sh resolve` first — the adapter expects its caller to
-     hold that output — then follow `references/backend-jira.md`.
+     `sdlc-backend.sh resolve` — the adapter expects its caller to hold
+     that output — and branch on its `action`, not on the recorded line:
+     `use-jira` → follow `references/backend-jira.md`; anything else →
+     the binding changed since the handoff, so say so and verify on the
+     backend `resolve` reports.
    Where reality disagrees with the file, reality wins; note the
    discrepancy to the user before proceeding.
 4. **Re-enter the recorded worktree.** Read the `Worktree:` line in
