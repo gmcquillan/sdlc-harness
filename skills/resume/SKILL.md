@@ -27,10 +27,11 @@ checklist item.
    - Branch in `## Refs` exists? (`git branch --list <branch>`)
    - Last-commit hash in `## State` present? (`git cat-file -e <hash>`)
    - Stash named there still exists? (`git stash list`)
-   - Ticket labels as recorded, on the backend the `Backend:` line in
-     `## Refs` names? Where that is not `github`, read
-     `references/backend-jira.md` and use its state lookup in place of
-     (`gh issue view <n> --json labels`)
+   - Ticket labels as recorded? Read the `Backend:` line in `## Refs`.
+     On `github`, or with no such line, run
+     `gh issue view <n> --json labels`. On any other backend run
+     `sdlc-backend.sh resolve` first — the adapter expects its caller to
+     hold that output — then follow `references/backend-jira.md`.
    Where reality disagrees with the file, reality wins; note the
    discrepancy to the user before proceeding.
 4. **Re-enter the recorded worktree.** Read the `Worktree:` line in
