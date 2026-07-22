@@ -104,7 +104,10 @@ binding is cached per repo, so the probe runs once, not once per skill.
 
 `tests/validate-skills.sh` enforces the split: step 0 must call the
 resolver, both reference files must exist, no `references/backend-github.md`
-may appear, and each skill's inline `gh` command count must not drop.
+may appear, and the five skills that shell out to `gh` — `ticket`, `next`,
+`implement`, `review`, `resume` — must not lose inline `gh` commands. A new
+skill that shells out to `gh` needs its own floor entry to get this
+protection.
 
 ## Skills
 

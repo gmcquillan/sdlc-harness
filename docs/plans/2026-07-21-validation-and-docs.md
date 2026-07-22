@@ -63,7 +63,7 @@ single unit by the README's test loop.
 
 **Interfaces:**
 - Consumes: `ok()`, `bad()`, `$root`, `$pass`, `$fail` — all already defined at the top of the file.
-- Produces: shell variable `pipeline="ticket next implement review"`, reused by Task 2's `gh`-floor block.
+- Produces: shell variable `pipeline="ticket next implement review"`, local to this task's loop and deliberately not reused by Task 2 (see Task 2's Interfaces).
 
 - [ ] **Step 1: Write the assertion**
 

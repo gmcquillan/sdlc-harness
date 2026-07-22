@@ -33,7 +33,7 @@ pipeline="ticket next implement review"
 for name in $pipeline; do
   f="$root/skills/$name/SKILL.md"
   if [ ! -f "$f" ]; then bad "$name: SKILL.md missing (step 0)"; continue; fi
-  step0=$(awk '/^0\. /{n=1} /^1\. /{n=0} n' "$f")
+  step0=$(awk 'n && /^1\. /{exit} /^0\. /{n=1} n' "$f")
   if [ -z "$step0" ]; then
     bad "$name: no step 0 block"
   elif printf '%s\n' "$step0" | grep -q 'sdlc-backend\.sh resolve'; then
@@ -61,12 +61,17 @@ fi
 # GitHub path grew a wrapper or an indirection. If a removal is deliberate,
 # lower the floor in the same commit and say why in the message.
 # The bracket class stands in for \b, which is not portable to BSD grep.
-gh_floors="ticket:7 next:4 implement:7 review:8 resume:1"
+# Frontmatter prose (e.g. a description ending "...a gh pr review.") must
+# not count, so the body is counted with the frontmatter stripped — the
+# same idiom as the fm extraction above.
+# To reproduce a floor for skills/<name>/SKILL.md, run:
+#   awk '/^---$/{n++; next} n>=2' skills/<name>/SKILL.md | grep -oE '(^|[^[:alnum:]_-])gh [a-z]' | wc -l
+gh_floors="ticket:7 next:4 implement:7 review:7 resume:1"
 for entry in $gh_floors; do
   name=${entry%%:*}; want=${entry##*:}
   f="$root/skills/$name/SKILL.md"
   if [ ! -f "$f" ]; then bad "$name: SKILL.md missing (gh floor)"; continue; fi
-  got=$(grep -oE '(^|[^[:alnum:]_-])gh [a-z]' "$f" | wc -l | tr -d ' ')
+  got=$(awk '/^---$/{n++; next} n>=2' "$f" | grep -oE '(^|[^[:alnum:]_-])gh [a-z]' | wc -l | tr -d ' ')
   if [ "$got" -ge "$want" ]; then
     ok "$name: $got inline gh commands (floor $want)"
   else
