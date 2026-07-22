@@ -250,3 +250,31 @@ Closes #14"
 | Red flags name the squash-merge trap | Step 6; test assertion 4 |
 | Nothing deleted before step 4 gate | Untouched — steps 4/5 of the skill are not edited |
 | Stale parenthetical corrected | Step 3; test assertion 3 |
+
+## Corrections made during implementation
+
+This plan is a point-in-time record, but two of its claims are wrong and
+should not be copied elsewhere:
+
+1. **Step 4 says `-d` "would refuse" a squash-merged branch. It does
+   not.** Verified against a fixture: `git branch -d` accepts a branch
+   merged into its *upstream* as well as into HEAD, so while the kept
+   remote branch still holds the same tip it deletes with only a warning.
+   `-D` is still correct — because that incidental success stops the
+   moment the remote branch is deleted or diverges — but the reason is
+   different from the one written here. Shipped in `9b28bb5`.
+
+2. **Matching the merged-PR map by branch name is unsafe.** As planned,
+   the PR-merged class keyed on the local branch name, and the `[ahead
+   N]` guard passes vacuously for a never-pushed branch (empty
+   `%(upstream:track)`). A local branch colliding with a merged PR's
+   `headRefName` — common for fork PRs (`patch-1`, `fix`, `main`) —
+   would be `-D`'d and the human gate shown real PR evidence for
+   unrelated work. The shipped skill matches on `%(upstream)` equalling
+   `refs/remotes/origin/<headRefName>` and drops `isCrossRepository`
+   PRs. It also tests `ahead` as a substring, since git writes `[ahead
+   1, behind 2]` as well as `[ahead 1]`. Shipped in `4db8eda`.
+
+Task 1's test block is also superseded: the shipped
+`tests/test-cleanup-skill.sh` has 10 assertions using `want`/`reject`/
+`in_section` helpers rather than the 6 shown here.

@@ -114,7 +114,8 @@ branches once work has merged.
     for t in tests/test-*.sh tests/validate-skills.sh; do bash "$t"; done
 
 The tests cover the hooks (context tripwire thresholds, handoff pickup,
-lint-before-push detection) and validate every skill's frontmatter.
+lint-before-push detection), validate every skill's frontmatter, and
+content-check the load-bearing claims in individual skill bodies.
 
 ## Design docs
 
