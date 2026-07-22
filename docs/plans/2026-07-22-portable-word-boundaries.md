@@ -340,11 +340,18 @@ pass=0; fail=0
 ok()  { echo "ok: $1"; pass=$((pass+1)); }
 bad() { echo "FAIL: $1"; fail=$((fail+1)); }
 
+# Whole-line comments are stripped before scanning, and deliberately so:
+# the fix these scripts carry is REQUIRED to explain in a comment why `\b`
+# and `[[:<:]]` were both rejected, and scanning prose would make that
+# explanation illegal. `sed` blanks the line rather than deleting it, so
+# `grep -n` still reports true line numbers. Trailing comments after code
+# are NOT stripped -- keep prose about these constructs on its own line.
+#
 # Every construct is matched with a plain BRE so this scanner is itself
 # portable. \\ matches one literal backslash.
 scan() { # file label pattern description
   local hits
-  hits=$(grep -n -- "$3" "$1" 2>/dev/null)
+  hits=$(sed 's/^[[:space:]]*#.*//' "$1" 2>/dev/null | grep -n -- "$3")
   if [ -n "$hits" ]; then
     bad "$2: $4"
     printf '%s\n' "$hits" | sed 's/^/      /'
@@ -440,6 +447,19 @@ shipped scripts statically so the gap is detectable from a Linux box."
 | Denylist still rejects, 3-hit floor still suppresses | 1 | Existing `UTF`/`CVE`/`RFC`/`ARM` and `RARE` assertions unchanged and green; new `PRE` assertion pins the `CVE-2024-1234` prefix path that carries the boundary character |
 | A test asserts the portability constraint itself | 3 | `tests/test-portability.sh`, collected by the README runner glob |
 | Chosen construct recorded in a comment naming why `\b` and `[[:<:]]` were rejected | 1, 2 | Comments above `cmd_sniff`'s pipeline and the hook's gate |
+
+## Plan corrections during implementation
+
+**1. The static guard must not scan comments (found after Task 1 landed).**
+As first written, `tests/test-portability.sh` scanned whole files, which put
+acceptance criteria 1 and 5 in direct conflict: AC-5 *requires* a comment
+naming `\b` and `[[:<:]]` as rejected, and AC-1's guard would then flag that
+very comment (`bin/sdlc-backend.sh:214,227`). Only one reading satisfies both —
+AC-1 governs *executed regex*, not prose — so `scan()` now blanks whole-line
+comments with `sed` before grepping. `sed` blanks rather than deletes so
+`grep -n` still reports true line numbers; verified against the half-fixed tree,
+where it correctly reported exactly one hit at `hooks/lint-before-push.sh:14`
+and zero hits from Task 1's comments.
 
 ## Out of scope (per the issue)
 
