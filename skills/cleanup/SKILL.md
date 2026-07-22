@@ -67,9 +67,13 @@ Create a todo per checklist item.
        Safe; deletes with `-d`.
      - **PR merged:** the branch name is a key in the merged-PR map, and
        `%(upstream:track)` does NOT show `[ahead N]`. Safe to remove, but
-       needs `-D`: a squash-merge writes a new commit, so the branch is
-       not an ancestor of base and `-d` would refuse. State the evidence
-       in the report — "PR #13 squash-merged as f3948f5".
+       use `-D`: a squash-merge writes a new commit, so the branch is not
+       an ancestor of the local base. (`-d` may *incidentally* succeed
+       while the kept remote branch still points at the same tip, since
+       git also accepts "merged to upstream" — but that stops holding the
+       moment the remote branch is deleted or moves, so do not rely on
+       it.) State the evidence in the report — "PR #13 squash-merged as
+       f3948f5".
      - **Upstream `[gone]`:** `%(upstream:track)` is `[gone]` (the
        remote branch was deleted). Safe to remove, but needs `-D` since
        it may not be merged into the local base.
