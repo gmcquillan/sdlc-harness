@@ -15,7 +15,7 @@ so its upstream is not `[gone]`. Neither local signal fires. This skill
 reclaims them — safely, behind a human gate.
 
 It never MUTATES anything beyond the local workspace: it does not push,
-does not delete remote branches, does not touch any remote state, and
+does not delete remote branches, does not modify any remote state, and
 never deletes uncommitted work. It DOES make one read-only remote query
 (`gh pr list`, step 2) to learn which branches already have merged PRs.
 Create a todo per checklist item.
@@ -28,6 +28,33 @@ Create a todo per checklist item.
    nothing, so fall back to whichever of `main`/`master` exists. Record
    the current branch (`git branch --show-current`).
 2. **Scan (all read-only — nothing is deleted in this step).**
+   - **Merged PRs** (the one read-only remote query; run this FIRST, so
+     the branch and worktree scans below can consult its map):
+
+     ```bash
+     command -v gh >/dev/null 2>&1 && \
+       gh pr list --state merged --limit 200 \
+         --json number,headRefName,mergeCommit,isCrossRepository
+     ```
+
+     Build a map from `headRefName` to `{number, mergeCommit.oid}`,
+     **skipping every PR whose `isCrossRepository` is true**: a fork PR's
+     `headRefName` is a branch name inside the fork (`patch-1`, `fix`,
+     `main` — names that collide with local branches by coincidence, not
+     identity), so keeping them would attach real PR evidence to an
+     unrelated local branch.
+
+     If `gh` is absent, unauthenticated, or the call fails (offline, or
+     the remote is not GitHub), skip it, treat the map as empty, and mark
+     the scan **DEGRADED** — you MUST say so in the report, because
+     merged branches will then be under-detected exactly as they were
+     before this signal existed. Distinguish the two cases when you
+     report: "gh unavailable — merged-PR detection skipped" versus "not a
+     GitHub remote — merged-PR detection does not apply."
+
+     The `--limit 200` window is a ceiling, not a guarantee: a branch
+     whose PR is older than the 200 most recent merges falls back to the
+     local signals and lands in review-manually. Say so if it bites.
    - **Uncommitted changes:** `git status --porcelain` in the main
      working tree, and in each worktree path from the Worktrees scan
      below. Any output = that tree is dirty.
@@ -48,41 +75,44 @@ Create a todo per checklist item.
      (`git worktree list --porcelain | awk '/^worktree /{print $2}'`) for
      `.handoff-*.md`. Report each under its own heading, flagged
      "un-resumed handoff — remove only if that work is done or abandoned."
-   - **Merged PRs** (the one read-only remote query; run once, before
-     classifying branches):
-
-     ```bash
-     gh pr list --state merged --limit 200 \
-       --json number,headRefName,mergeCommit
-     ```
-
-     Build a map from `headRefName` to `{number, mergeCommit.oid}`. If
-     `gh` is absent, unauthenticated, or the call fails (offline), skip
-     it, treat the map as empty, and mark the scan **DEGRADED** — you
-     MUST say so in the report, because merged branches will then be
-     under-detected exactly as they were before this signal existed.
    - **Local branches**, via `git for-each-ref --format
-     '%(refname:short) %(upstream:track)' refs/heads`, classified into:
+     '%(refname:short) %(upstream) %(upstream:track)' refs/heads`.
+     **Evaluate the classes in the order listed; first match wins** — a
+     branch can satisfy more than one, and the order decides which reason
+     and which delete flag you report.
      - **Merged into base:** appears in `git branch --merged <base>`.
        Safe; deletes with `-d`.
-     - **PR merged:** the branch name is a key in the merged-PR map, and
-       `%(upstream:track)` does NOT show `[ahead N]`. Safe to remove, but
-       use `-D`: a squash-merge writes a new commit, so the branch is not
-       an ancestor of the local base. (`-d` may *incidentally* succeed
-       while the kept remote branch still points at the same tip, since
-       git also accepts "merged to upstream" — but that stops holding the
-       moment the remote branch is deleted or moves, so do not rely on
-       it.) State the evidence in the report — "PR #13 squash-merged as
-       f3948f5".
-     - **Upstream `[gone]`:** `%(upstream:track)` is `[gone]` (the
-       remote branch was deleted). Safe to remove, but needs `-D` since
-       it may not be merged into the local base.
+     - **PR merged:** ALL THREE must hold — (a) the branch's
+       `%(upstream)` is exactly `refs/remotes/origin/<headRefName>` for
+       an entry in the merged-PR map (match on the tracked upstream, NOT
+       on the local branch name — a never-pushed local branch has an
+       empty `%(upstream)` and must never match), (b) that entry survived
+       the `isCrossRepository` filter, and (c) `%(upstream:track)`
+       reports NO ahead count — beware that git writes both `[ahead 1]`
+       and `[ahead 1, behind 2]`, so test for the substring `ahead`, not
+       for a literal `[ahead N]`. Safe to remove, but use `-D`: a
+       squash-merge writes a new commit, so the branch is not an ancestor
+       of the local base. (`-d` may *incidentally* succeed while the kept
+       remote branch still points at the same tip, since git also accepts
+       "merged to upstream" — but that stops holding the moment the
+       remote branch is deleted or moves, so do not rely on it.) State
+       the evidence in the report — "PR #13 squash-merged as f3948f5".
+     - **Upstream `[gone]`:** `%(upstream:track)` is `[gone]` (the remote
+       branch was deleted) AND the branch holds no commits absent from
+       base — `git log --oneline <base>..<branch>` is empty. Safe to
+       remove, but needs `-D` since it may not be merged into the local
+       base. If that `git log` is NON-empty the branch carries work that
+       exists nowhere else (deleting the remote branch erases the ahead
+       count, so `[gone]` alone cannot tell you): send it to review
+       manually with those commits listed.
      - **Unmerged / has unpushed commits:** none of the above.
-       Report under "review manually" — NEVER auto-delete. A branch whose
-       PR merged but which is `[ahead N]` belongs here too: those N
-       commits were never in the PR, and `-D` would discard them. Say
-       that is the reason. In a DEGRADED scan, add that a merged PR may
-       be the real status and the user can re-run where `gh` works.
+       Report under "review manually" — NEVER auto-delete. Two cases land
+       here for reasons worth stating explicitly: a branch whose PR
+       merged but which is ahead of its upstream (those commits were
+       never in the PR, and `-D` would discard them), and a branch whose
+       name resembles a merged PR's but which does not track it. In a
+       DEGRADED scan, add that a merged PR may be the real status and the
+       user can re-run where `gh` works.
      - Always exclude: the current branch, the base branch, and any
        branch checked out in a worktree that is not itself being removed.
 3. **Report** the findings grouped as: Uncommitted (per tree),
@@ -129,8 +159,15 @@ Create a todo per checklist item.
   commit, so a fully merged branch shows as unmerged and, if the repo
   keeps head branches, has no `[gone]` upstream either. Check the
   merged-PR map before sending a branch to "review manually".
-- Deleting a PR-merged branch that is `[ahead N]` → those commits were
-  never in the PR; that branch is review-manually, not deletable.
+- Deleting a PR-merged branch that is ahead of its upstream → those
+  commits were never in the PR; that branch is review-manually, not
+  deletable. Test for `ahead` anywhere in `%(upstream:track)`: git writes
+  `[ahead 1, behind 2]` as well as `[ahead 1]`.
+- Matching a merged PR by branch NAME instead of by tracked upstream →
+  a never-pushed local branch (empty `%(upstream)`) or a fork PR's
+  `headRefName` can collide by coincidence, and the human gate would then
+  be shown real PR evidence for unrelated work. Match on
+  `%(upstream)` and drop `isCrossRepository` PRs.
 - Treating a `[gone]` upstream as "definitely merged" without saying so →
   say the remote branch was deleted; let the human judge.
 - `git clean` / deleting untracked files to "tidy up" → out of scope;
