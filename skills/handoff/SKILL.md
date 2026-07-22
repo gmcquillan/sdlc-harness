@@ -46,7 +46,8 @@ the single source of truth; every pickup mechanism reads the same format.
 
    ## Refs
    - Ticket: <ref> / PR: #<n> / Epic: <ref>
-   - Backend: <github|jira>
+   - Backend: <github|jira — from sdlc-backend.sh resolve; github when
+     its backend field is null>
    - Branch: sdlc/<ref>-<slug>
    - Worktree: <$wt from above — the worktree's absolute path, or "main">
    - Spec: docs/specs/<file>.md

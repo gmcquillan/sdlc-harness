@@ -349,10 +349,7 @@ GitHub path does not have.
 
 The caller is always a subagent. **Normalize inside that subagent** to the
 node shape the main loop expects — `{ref, title, dependsOn, inProgress,
-inReview, assigned, ops, createdAt}` (`sdlc:next` currently names that
-first field `number`; T3 — issue #4 — generalizes it to `ref` for both
-backends) —
-where `dependsOn` is the list of
+inReview, assigned, ops, createdAt}` — where `dependsOn` is the list of
 inbound "is blocked by" refs and `inProgress` / `inReview` / `ops` are
 label tests. **`assigned` is always `false` on JIRA**: the claim is the
 `sdlc:in-progress` label, not the assignee field — see `claim` below.

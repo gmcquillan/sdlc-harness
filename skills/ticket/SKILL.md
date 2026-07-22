@@ -1,17 +1,17 @@
 ---
 name: ticket
-description: Use when a committed SDLC spec with a Decomposition section needs GitHub issues created — translates each decomposition task into a PR-scoped child issue under one epic issue, with a dry-run approval gate and idempotency check. Invoke as sdlc:ticket <spec-path>.
+description: Use when a committed SDLC spec with a Decomposition section needs tickets created — translates each decomposition task into a PR-scoped child ticket under one epic, with a dry-run approval gate and idempotency check. Invoke as sdlc:ticket <spec-path>.
 ---
 
-# SDLC Ticket: Spec → GitHub Issues
+# SDLC Ticket: Spec → Tickets
 
 Pure translation plus `gh` calls. Create a todo per checklist item.
 
 ## Checklist
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
-   continue below unchanged; on `use-jira` read `references/backend-jira.md`;
-   on `bind-needed` read `references/backend-bind.md` and follow it.
+   continue below unchanged; on `use-jira` read and follow the plugin's
+   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Preconditions:** `gh auth status` succeeds (else stop; tell the user
    to run `! gh auth login`). The spec path argument exists and contains
    a `## Decomposition` section (else stop and say what is missing —
@@ -31,7 +31,9 @@ Pure translation plus `gh` calls. Create a todo per checklist item.
 
 4. **Dry-run gate:** parse every `### T<n>:` block and present a table —
    T#, title, criteria count, depends-on — headed by
-   `Backend: <github|jira> · Project: <owner/repo or JIRA key>` and the
+   `Backend: <github|jira> · Project: <repo or JIRA key>`, both read off
+   step 0's resolve output (on the GitHub path `backend` and `project`
+   are null, so say `github` and its `repo`), and the
    epic title (`[epic] <spec slug>`). Get explicit user approval BEFORE
    creating anything. This is a human gate; do not skip it — the
    `Backend:` line is what stops an epic being filed into the wrong

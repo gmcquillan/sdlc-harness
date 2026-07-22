@@ -3,7 +3,7 @@ name: implement
 description: Use when an sdlc:task ticket is ready to build — claims the ticket, maps the subsystem via scouts, branches in a worktree, plans, executes with TDD in fresh subagents, self-reviews, and opens a PR. Never merges. Invoke as sdlc:implement [ref].
 ---
 
-# SDLC Implement: Issue → PR
+# SDLC Implement: Ticket → PR
 
 The workhorse. Context discipline governs every step: **the main loop
 holds judgment and state transitions; breadth goes to subagents.** If a
@@ -14,8 +14,8 @@ per checklist item.
 ## Checklist
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
-   continue below unchanged; on `use-jira` read `references/backend-jira.md`;
-   on `bind-needed` read `references/backend-bind.md` and follow it.
+   continue below unchanged; on `use-jira` read and follow the plugin's
+   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Select the issue.** Argument given → use it. None → list candidates:
    `gh issue list --label "sdlc:task" --state open --json
    number,title,body,labels,assignees` and pick the first that is (a) not

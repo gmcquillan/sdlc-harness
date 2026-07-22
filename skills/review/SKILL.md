@@ -11,8 +11,8 @@ verdicts, and judgment. Create a todo per checklist item.
 ## Checklist
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
-   continue below unchanged; on `use-jira` read `references/backend-jira.md`;
-   on `bind-needed` read `references/backend-bind.md` and follow it.
+   continue below unchanged; on `use-jira` read and follow the plugin's
+   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Gather metadata (main loop, small):**
    `gh pr view <PR#> --json title,body,headRefName,files` — extract the
    linked ticket ref from the PR body (`Closes #<n>` on GitHub), then

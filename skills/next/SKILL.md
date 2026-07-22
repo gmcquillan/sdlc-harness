@@ -15,7 +15,8 @@ returns only a compact adjacency list. Create a todo per checklist item.
 
 Each `sdlc:task` body carries a `## Depends on` section of ticket refs
 (written by `sdlc:ticket`). `A depends on B` is the edge `B → A`.
-A ref is opaque — `#123` on GitHub, `PROJ-123` on JIRA.
+A ref is opaque: `123` on GitHub — written `#123` inside issue bodies,
+but bare when passed to `gh` — and `PROJ-123` on JIRA.
 
 - **Dependents of X** = tickets that depend on X directly *or
   transitively* (the downstream closure of X over the OPEN task set).
@@ -37,8 +38,8 @@ appear as context, but are never the recommendation.
 ## Checklist
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
-   continue below unchanged; on `use-jira` read `references/backend-jira.md`;
-   on `bind-needed` read `references/backend-bind.md` and follow it.
+   continue below unchanged; on `use-jira` read and follow the plugin's
+   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Preconditions:** `gh auth status` succeeds (else stop; tell the user
    to run `! gh auth login`).
 2. **Gather (subagent).** Dispatch one scout to run the `gh` queries and
@@ -60,7 +61,8 @@ appear as context, but are never the recommendation.
    count = leverage, (b) critical-path depth = longest downstream chain
    rooted at it. Classify each node ready / not-ready by the test above.
 4. **Rank the ready set** by, in order: leverage desc → critical-path
-   depth desc → oldest `createdAt` → lowest ref. `ops` tickets
+   depth desc → oldest `createdAt` → lowest numeric part of the ref
+   (so `42` before `100`, `PROJ-9` before `PROJ-10`). `ops` tickets
    are ranked normally (they genuinely block downstream work) but are NOT
    candidates for the `implement` handoff — see step 6.
 5. **Report.**
@@ -109,7 +111,8 @@ appear as context, but are never the recommendation.
 - A ticket with the most dependents but an OPEN prerequisite is shown as
   context, never as the pick.
 - Two ready tickets tied on leverage → the one on the longer downstream
-  chain wins; still tied → the older issue; still tied → lower number.
+  chain wins; still tied → the older ticket; still tied → the lower
+  numeric part of the ref.
 
 ## Red flags
 
