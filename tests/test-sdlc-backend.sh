@@ -347,6 +347,37 @@ git -C "$sn" commit -q --allow-empty -m "subject" -m "BODYKEY-1 BODYKEY-2 BODYKE
 (cd "$sn" && "$SUT" sniff) | grep -q '^BODYKEY 3$' \
   && ok "sniff reads commit bodies" || bad "sniff ignored commit bodies"
 
+# --- sniff: word-boundary fidelity ---------------------------------------
+# The boundary rules `\b` used to enforce, pinned as behaviour so the
+# portable replacement cannot quietly widen or narrow them. ADJ-* proves
+# adjacency survives: a fix that consumes the trailing boundary character
+# (grep -o with a bracket class) counts 2 here, not 3.
+bnd="$tmp/bounds"; mkrepo "$bnd" "git@github.com:a/bounds.git"
+b() { git -C "$bnd" commit -q --allow-empty -m "$1"; }
+b "ADJ-1 ADJ-2 ADJ-3"                        # 3 keys, single-space separated
+b "XKEY-1 and _NOPE-1 and 9NOPE-1"
+b "XKEY-2 and _NOPE-2 and 9NOPE-2"
+b "XKEY-3 and _NOPE-3 and 9NOPE-3"
+b "TAIL-1abc TAIL-2abc TAIL-3abc"            # digits then letters: not a key
+b "PRE-1-9 x"; b "PRE-2-9 x"; b "PRE-3-9 x"  # multi-hyphen: prefix counts
+b "feature/SLASH-1"; b "feature/SLASH-2"; b "feature/SLASH-3"
+bnd_out=$(cd "$bnd" && "$SUT" sniff)
+
+eq "ADJ 3" "$(printf '%s\n' "$bnd_out" | grep '^ADJ ')" \
+   "sniff counts space-adjacent keys on one line"
+eq "XKEY 3" "$(printf '%s\n' "$bnd_out" | grep '^XKEY ')" \
+   "sniff counts a key preceded by a non-word character"
+eq "PRE 3" "$(printf '%s\n' "$bnd_out" | grep '^PRE ')" \
+   "sniff takes the leading key of a multi-hyphen token (CVE-2024-1234 form)"
+eq "SLASH 3" "$(printf '%s\n' "$bnd_out" | grep '^SLASH ')" \
+   "sniff counts a key after a path separator"
+printf '%s\n' "$bnd_out" | grep -q '^NOPE ' \
+  && bad "sniff proposed NOPE (key glued to a leading word character)" \
+  || ok "sniff rejects a key glued to a leading word character"
+printf '%s\n' "$bnd_out" | grep -q '^TAIL ' \
+  && bad "sniff proposed TAIL (digits followed by letters is not a key)" \
+  || ok "sniff rejects digits followed by letters"
+
 # a repo with no keys at all sniffs clean and does not error
 clean="$tmp/cleanrepo"; mkrepo "$clean" "git@github.com:a/clean.git"
 sn_clean=$(cd "$clean" && "$SUT" sniff); rc=$?
