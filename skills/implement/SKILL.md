@@ -13,6 +13,9 @@ per checklist item.
 
 ## Checklist
 
+0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
+   continue below unchanged; on `use-jira` read `references/backend-jira.md`;
+   on `bind-needed` read `references/backend-bind.md` and follow it.
 1. **Select the issue.** Argument given → use it. None → list candidates:
    `gh issue list --label "sdlc:task" --state open --json
    number,title,body,labels,assignees` and pick the first that is (a) not
