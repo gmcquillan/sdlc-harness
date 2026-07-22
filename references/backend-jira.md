@@ -463,7 +463,8 @@ belongs.
 
 ## Ticket references on JIRA
 
-A reference is an opaque string: `#123` on GitHub, `PROJ-123` on JIRA.
+A reference is an opaque string: `123` on GitHub — written `#123` inside
+issue bodies, but bare when passed to `gh` — and `PROJ-123` on JIRA.
 Skills never parse it.
 
 | Convention | GitHub | JIRA |

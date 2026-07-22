@@ -21,7 +21,8 @@ per checklist item.
    number,title,body,labels,assignees` and pick the first that is (a) not
    labeled `sdlc:in-progress` or `sdlc:in-review`, (b) unassigned, and
    (c) unblocked — every ref under its `## Depends on` heading is
-   CLOSED (`gh issue view <ref> --json state`). No candidate → report why
+   CLOSED (`gh issue view <ref> --json state`; that section writes GitHub
+   refs as `#123`, so pass them bare). No candidate → report why
    each open task is blocked and stop.
 2. **Preconditions:** clean `git status`; `gh auth status` succeeds.
    Either failure → stop and report. Then **sync the base branch with

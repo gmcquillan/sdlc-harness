@@ -15,9 +15,10 @@ verdicts, and judgment. Create a todo per checklist item.
    `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Gather metadata (main loop, small):**
    `gh pr view <PR#> --json title,body,headRefName,files` — extract the
-   linked ticket ref from the PR body (`Closes #<n>` on GitHub), then
-   `gh issue view <n> --json body` for the acceptance criteria and spec
-   pointer. Do NOT fetch the diff into this context.
+   linked ticket ref from the PR body — on GitHub the bare `<n>` of
+   `Closes #<n>` — then `gh issue view <n> --json body` for the
+   acceptance criteria and spec pointer. Do NOT fetch the diff into this
+   context.
 2. **Fan out reviewers** per `fable-harness:fan-out` — three subagents,
    ALL dispatched in a single message, each given the PR number, the
    acceptance criteria, and ONE dimension:
