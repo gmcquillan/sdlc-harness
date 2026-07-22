@@ -112,5 +112,24 @@ chmod +x "$bindir/pnpm" "$bindir/npm"
 PATH="$bindir:$PATH" run "git push" "$r"
 allow "pnpm-lock.yaml -> selects pnpm over npm -> allow push"
 
+# 10. Word-boundary discrimination in the push gate. The comment above the
+# gate has always claimed `git commit && push` does not match; nothing
+# tested it. These pin both halves -- what must match and what must not --
+# so the portable rewrite of that regex is provably equivalent. A repo with
+# a Makefile whose `lint` target fails is used so a *matched* command denies
+# and an *unmatched* one allows: the two outcomes are distinguishable.
+r=$(mkrepo); track "$r"
+printf 'lint:\n\tfalse\n' > "$r/Makefile"
+for c in "git push" "git push origin main" "git -C /tmp/x push" \
+         "git push --force-with-lease" "echo git push" "git   push"; do
+  run "$c" "$r"
+  deny "push gate matches: $c"
+done
+for c in "ls -la" "git commit && push" "git commit; push" "gitx push" \
+         "mygit push" "git pushed" "git push2" "git push_hard" "push git"; do
+  run "$c" "$r"
+  allow "push gate ignores: $c"
+done
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
