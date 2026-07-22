@@ -275,6 +275,31 @@ should not be copied elsewhere:
    PRs. It also tests `ahead` as a substring, since git writes `[ahead
    1, behind 2]` as well as `[ahead 1]`. Shipped in `4db8eda`.
 
+3. **Guarding the `[gone]` class with "holds no commits absent from
+   base" broke the case the ticket is about.** An intermediate commit
+   tightened `[gone]` to require `git log <base>..<branch>` to be empty.
+   That condition is false for *every* squash-merge, so the default
+   GitHub merge-and-delete flow — squash, then delete the head branch —
+   stopped being reclaimable unless the merged-PR map caught it first.
+   It therefore regressed whenever the map is empty or incomplete: a
+   DEGRADED scan, a non-GitHub remote, or a PR outside the `--limit 200`
+   window. Verified with a fixture: a squash-merged branch whose remote
+   was deleted reports `track=[gone]` with two commits still in
+   `<base>..<branch>`.
+
+   The shipped skill keeps the distinction but not the demotion. A
+   `[gone]` branch with a non-empty `<base>..<branch>` is **deletable,
+   merge unverified**: its own report group, commit subjects listed,
+   confirmed one at a time at the gate rather than by a blanket "yes,
+   all". The local signals genuinely cannot separate "squash-merged then
+   deleted" from "deleted with real work on it" — so the human gate
+   adjudicates, which is what it is for. Hiding the branch in "review
+   manually" only made cleanup reclaim nothing while looking safe.
+
 Task 1's test block is also superseded: the shipped
-`tests/test-cleanup-skill.sh` has 10 assertions using `want`/`reject`/
-`in_section` helpers rather than the 6 shown here.
+`tests/test-cleanup-skill.sh` has 13 assertions using `want`/`reject`/
+`in_section` helpers rather than the 6 shown here. `in_section` bounds
+each section at the next `## ` heading or top-level numbered step —
+matching to end-of-file let a later section satisfy an assertion about
+an earlier one (the red flags mention `PR-merged`, which vacuously
+satisfied the step 5 assertion; verified by mutation test).

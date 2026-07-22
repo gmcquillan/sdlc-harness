@@ -97,14 +97,22 @@ Create a todo per checklist item.
        "merged to upstream" — but that stops holding the moment the
        remote branch is deleted or moves, so do not rely on it.) State
        the evidence in the report — "PR #13 squash-merged as f3948f5".
-     - **Upstream `[gone]`:** `%(upstream:track)` is `[gone]` (the remote
-       branch was deleted) AND the branch holds no commits absent from
-       base — `git log --oneline <base>..<branch>` is empty. Safe to
-       remove, but needs `-D` since it may not be merged into the local
-       base. If that `git log` is NON-empty the branch carries work that
-       exists nowhere else (deleting the remote branch erases the ahead
-       count, so `[gone]` alone cannot tell you): send it to review
-       manually with those commits listed.
+     - **Upstream `[gone]`:** `%(upstream:track)` is `[gone]` — the
+       remote branch was deleted. Needs `-D` either way, since the branch
+       may not be an ancestor of the local base. Deleting the remote also
+       erased the ahead count, so `[gone]` alone cannot tell you whether
+       the branch still holds unique work. Split on `git log --oneline
+       <base>..<branch>`:
+       - EMPTY → **deletable.** Say the remote branch was deleted.
+       - NON-EMPTY → **deletable, merge unverified.** A squash-merge
+         whose head branch was then deleted leaves exactly this shape —
+         the squash wrote a new commit, so the merged work is in base
+         under a different SHA — and so does a branch whose remote was
+         deleted with real work still on it. The two are
+         indistinguishable locally. This is the ordinary result of the
+         default GitHub merge-and-delete flow, so do NOT bury it in
+         "review manually": report it as its own group with the commit
+         subjects listed, and let the human judge at the gate.
      - **Unmerged / has unpushed commits:** none of the above.
        Report under "review manually" — NEVER auto-delete. Two cases land
        here for reasons worth stating explicitly: a branch whose PR
@@ -118,21 +126,27 @@ Create a todo per checklist item.
 3. **Report** the findings grouped as: Uncommitted (per tree),
    Prunable worktrees, Stray handoffs, Deletable branches (merged /
    PR-merged / upstream-gone, each with its reason — for a PR-merged
-   branch, name the PR and the squash commit), and Review-manually
-   branches (each with why). If the merged-PR query could not run, say
-   the scan was DEGRADED and that merged branches may be under-reported.
-   If everything is clean, say so and stop.
+   branch, name the PR and the squash commit), Deletable-but-unverified
+   branches (upstream `[gone]` while still holding commits absent from
+   base — list those commits), and Review-manually branches (each with
+   why). Keep the unverified group visually separate from the verified
+   deletable ones. If the merged-PR query could not run, say the scan was
+   DEGRADED and that merged branches may be under-reported. If everything
+   is clean, say so and stop.
 4. **Confirmation gate (the human gate).** Present the deletable
    worktrees, branches, and stray handoffs and ask the user to confirm — all, or a
-   selected subset. Delete NOTHING before an explicit yes.
+   selected subset. Delete NOTHING before an explicit yes. Deletable-but-
+   unverified branches are confirmed ONE AT A TIME, with their commits
+   shown — a blanket "yes, all" never sweeps them up.
 5. **Execute** only what was confirmed:
    - Worktrees: `git worktree remove <path>` (add `--force` ONLY for a
      dirty worktree the user explicitly approved), then `git worktree
      prune`.
    - Branches: `git branch -d <branch>` for merged into base; `git branch
-     -D <branch>` for PR-merged and for upstream-gone — both need `-D`
-     because neither is guaranteed to be an ancestor of the local base.
-     State the reason when you do ("PR #13 squash-merged as f3948f5").
+     -D <branch>` for PR-merged, for upstream-gone, and for deletable-but-
+     unverified — none of those is guaranteed to be an ancestor of the
+     local base. State the reason when you do ("PR #13 squash-merged as
+     f3948f5").
    - **Stray handoffs:** delete confirmed `.handoff-*.md` files. When a
      worktree is removed, also delete any handoff that lived in it or that
      names its path in `## Refs`, so the pointer never outlives its target.
@@ -170,6 +184,11 @@ Create a todo per checklist item.
   `%(upstream)` and drop `isCrossRepository` PRs.
 - Treating a `[gone]` upstream as "definitely merged" without saying so →
   say the remote branch was deleted; let the human judge.
+- Filing a `[gone]` branch that still holds commits under "review
+  manually" as though it were unmerged → that is the ordinary shape of
+  the default merge-and-delete flow, and hiding it there is how cleanup
+  stops reclaiming anything. It is deletable-but-unverified: show the
+  commits and let the human decide.
 - `git clean` / deleting untracked files to "tidy up" → out of scope;
   uncommitted work is the user's.
 - Silently skipping the worktree you are standing in → say you cannot
