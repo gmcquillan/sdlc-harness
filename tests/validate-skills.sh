@@ -8,7 +8,7 @@ pass=0; fail=0
 ok()   { echo "ok: $1"; pass=$((pass+1)); }
 bad()  { echo "FAIL: $1"; fail=$((fail+1)); }
 
-expected="interview ticket next implement review handoff resume cleanup"
+expected="interview ticket next implement review handoff resume cleanup fixes"
 for name in $expected; do
   f="$root/skills/$name/SKILL.md"
   if [ ! -f "$f" ]; then bad "$name: SKILL.md missing"; continue; fi
@@ -74,7 +74,7 @@ fi
 # same idiom as the fm extraction above.
 # To reproduce a floor for skills/<name>/SKILL.md, run:
 #   awk '/^---$/{n++; next} n>=2' skills/<name>/SKILL.md | grep -oE '(^|[^[:alnum:]_-])gh [a-z]' | wc -l
-gh_floors="ticket:7 next:4 implement:7 review:7 resume:1"
+gh_floors="ticket:7 next:4 implement:7 review:7 resume:1 fixes:7"
 for entry in $gh_floors; do
   name=${entry%%:*}; want=${entry##*:}
   f="$root/skills/$name/SKILL.md"
