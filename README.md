@@ -20,6 +20,8 @@ to a clean one without losing the thread.
                                              /sdlc:next [#]
                                                     │
   human merges ◄── /sdlc:review <PR#> ◄── PR ◄── /sdlc:implement [#]
+                            ▲              │
+                            └─ /sdlc:fixes <PR#> ◄──┘
 ```
 
 ## Why
@@ -82,6 +84,11 @@ command; most run best in a fresh session.
 5. **`/sdlc:review <PR#>`** — fans out reviewers against the issue's
    acceptance criteria, skeptic-verifies their findings, and posts a
    review. **Never merges** — a human does that.
+6. **`/sdlc:fixes <PR#>`** — triages a PR's open review comments (inline,
+   summary, and conversation), gates on an accept/refute table, lands
+   accepted fixes through the same worktree → subagent TDD engine as
+   `implement`, and replies to every thread. **Never resolves a thread,
+   never merges.**
 
 At any point, `/sdlc:handoff` and `/sdlc:resume` bridge a session that's
 running out of context, and `/sdlc:cleanup` reclaims stale worktrees and
@@ -109,6 +116,11 @@ may appear, and the five skills that shell out to `gh` — `ticket`, `next`,
 skill that shells out to `gh` needs its own floor entry to get this
 protection.
 
+`sdlc:fixes` has one too, for the same reason — protecting its inline
+`gh` usage — even though it isn't part of the ticket-backend list above:
+PR comments are GitHub-native regardless of which ticket backend is
+bound, so it has no step 0 to resolve.
+
 ## Skills
 
 | Skill | Does |
@@ -118,6 +130,7 @@ protection.
 | `sdlc:next [epic#]` | Survey open tasks → rank ready ones by tickets-unblocked → confirm → hand off to `implement` |
 | `sdlc:implement [#]` | Claim issue → scout-map → worktree branch → plan → TDD via subagents → PR |
 | `sdlc:review <PR#>` | Fan-out review vs acceptance criteria, skeptic-verified; never merges |
+| `sdlc:fixes <PR#>` | Triage PR review comments → accept/refute gate → fix accepted via worktree + subagent TDD → reply to every thread; never resolves, never merges |
 | `sdlc:handoff` | Commit WIP + write `.handoff-<date>-<uuid>.md`; `--continue` chains a fresh-context subagent |
 | `sdlc:resume` | Verify handoff against git, archive it, re-enter the phase |
 | `sdlc:cleanup` | Scan worktrees/branches, report, and (on confirmation) delete stale ones; never removes uncommitted work |
