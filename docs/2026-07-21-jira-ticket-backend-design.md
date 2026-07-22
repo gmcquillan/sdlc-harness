@@ -216,8 +216,8 @@ The JIRA adapter maps those operations through the cached tool map:
 
 | Operation | JIRA |
 |---|---|
-| `create_epic` | `create_issue`, type Epic, summary `[epic] <slug>` |
-| `create_task` | `create_issue`, type Story, `parent` = epic key, label `sdlc:task` |
+| `create_epic` | `create_issue`, type Epic, label `sdlc:epic`, summary `[epic] <slug>` — reuse an existing epic only on that label **and** an exact summary match |
+| `create_task` | `create_issue`, type Story, label `sdlc:task`; epic edge is `parent`, else the server's epic-link type, else the `## Epic` section, which is written on every task regardless |
 | `link_dependency` | `link_issues`, type **Blocks**, blocker → blocked |
 | `list_open_tasks` | JQL `project = K AND labels = "sdlc:task" AND statusCategory != Done`, expanded with issue links, labels, description, created |
 | `get_state` | open ⟺ `statusCategory != Done` |
@@ -250,7 +250,8 @@ command each operation replaces.
 - **`ticket`** — step 0 resolves the backend; the dry-run gate table
   gains a `Backend:` header line naming backend and project, so creation
   into the wrong system cannot be approved by accident. The JIRA
-  idempotency check is a JQL search for the spec slug in epic summaries.
+  idempotency check is a JQL search for the spec slug across `sdlc:epic`
+  summaries, confirmed by an exact match before reuse.
   The `## Depends on` markdown section is still written into the
   description on both backends for humans, but on JIRA the authoritative
   edge is the Blocks link.
@@ -260,7 +261,9 @@ command each operation replaces.
   (`{ref, title, dependsOn, inProgress, inReview, assigned, ops,
   createdAt}`) **inside the subagent** — JIRA's issue-link JSON must not
   reach the main loop, which is the whole reason that step is delegated.
-  On JIRA, `dependsOn` comes from inbound "is blocked by" links.
+  On JIRA, `dependsOn` comes from inbound "is blocked by" links, and
+  `assigned` is pinned `false` — never read off the issue's assignee, or
+  every human-assigned ticket reads as not-ready.
 - **`implement`** — the branch pattern generalizes to `sdlc/<ref>-<slug>`
   on both backends, so `sdlc/42-add-widget` or
   `sdlc/PROJ-123-add-widget`. On JIRA the PR title is

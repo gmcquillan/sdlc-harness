@@ -30,7 +30,7 @@ and so a change to the mapping is one edit rather than eight.
 | `create_task` | `ticket` step 6 `gh issue create`; `review` step 5 tier B `gh issue create` (tier C files a tier-B-style ticket through that same command) |
 | `link_dependency` | no GitHub command of its own — it is the `## Depends on` section of the `create_task` commands above, which on JIRA becomes a second call once the Story exists |
 | `list_open_tasks` | `next` step 2 `gh issue list`; `implement` step 1 `gh issue list` |
-| `get_state` | `next` step 2 and `implement` step 1 `gh issue view <ref> --json state`; `review` step 1 `gh issue view <n> --json body`; `resume` step 3 `gh issue view <n> --json labels` |
+| `get_state` | every `gh issue view` in the pipeline, whichever `--json` fields it names: `next` step 2 `--json number,state`; `implement` step 1 `--json state`; `review` step 1 `--json body`; `resume` step 3 `--json labels` |
 | `claim` | `implement` step 3 `gh issue edit` |
 | `mark_in_review` | `implement` step 11 `gh issue edit` |
 | `comment` | `implement` step 11 `gh issue comment` |
@@ -68,8 +68,10 @@ the local server name.
 **Use the `toolmap` you already hold from `resolve`.** It is the same
 object — `{server, probed_at, ops:{…}}` — and re-reading it costs a
 process for nothing. Resolve every operation below through
-`toolmap.ops.<slot>`; the slots are `create_issue`, `search`,
-`get_issue`, `edit_issue`, `comment`, `link_issues`, and `list_projects`.
+`toolmap.ops.<slot>`; the six adapter slots are `create_issue`, `search`,
+`get_issue`, `edit_issue`, `comment`, and `link_issues`. (`list_projects`
+and `list_sites` are in the map too, but they are bind-time only — no
+operation here uses them.)
 
 Only after a mid-session re-probe (below) do you need to read it back:
 
@@ -90,12 +92,34 @@ cached.
 
 Before the first call of a session, confirm those cached tool names
 appear in `ToolSearch` results. **If a cached name is absent, re-probe**
-per `references/backend-bind.md` §"Probing the tool map" and write the
-map back with `set-toolmap`. A stale map is re-probed, never fatal.
+per `references/backend-bind.md` §"1. Probe the tool map" and write the
+map back with `set-toolmap`. That section is a legitimate mid-session
+entry point — read it for the re-probe alone, without running the rest of
+the bind procedure. A stale map is re-probed, never fatal.
 
 Argument names vary between servers as much as tool names do. The fields
 named in each operation below are **semantic**: map them onto the actual
 parameter names in the tool's schema from `ToolSearch`.
+
+**Pass a cloud id only where the schema asks for one.** If the tool's
+schema takes a cloud id or site id, pass the `cloud_id` you already hold
+from `resolve`; a server pinned to a single site takes none at all (the
+community `sooperset/mcp-atlassian` server binds its site through
+`JIRA_URL` and rejects nothing because it accepts nothing). Do not invent
+the argument where the schema has no slot for it, and do not omit it
+where it is required — the official Atlassian remote server requires one
+on **every** Jira call. That server also accepts the site URL in place of
+the id, so a non-empty `site` is a usable fallback when `cloud_id` is
+empty.
+
+**`edit_issue` sets fields; it does not merge them.** Neither MCP server
+this adapter targets exposes Jira's differential `update: {labels:
+[{add: …}]}` form — both accept only a `fields` object, and a `labels`
+value there **replaces the entire array**. Any operation that changes
+labels is therefore a read-modify-write: `get_issue` for the current
+labels, compute the resulting set locally, and write it whole. Sending
+only the label you meant to add silently deletes every other label on the
+ticket.
 
 ## The nine operations
 
@@ -106,9 +130,21 @@ it already ticketed:
 
 ```
 tool: toolmap.ops.search
-jql:  project = <project> AND issuetype = Epic
-      AND labels = "sdlc:epic" AND summary ~ "<slug>"
+jql:  project = "<project>" AND labels = "sdlc:epic"
+      AND summary ~ "<slug>"
 ```
+
+**Quote `<project>`.** A Jira key is 2–10 uppercase alphanumerics and may
+collide with a JQL reserved word — `IN`, `IS`, `NOT`, `OR`, `TO`, `ON`,
+`BY`, `WAS`, `CF` — and `backend-bind.md` lets the user type the key by
+hand, so an unquoted interpolation can turn into a parse error on a
+perfectly valid project.
+
+**Do not add `AND issuetype = Epic`.** On a site with no issue type by
+that name JQL *errors* rather than returning an empty set, and the prose
+around this query reads a non-hit as "no epic exists" — so the error path
+and the file-a-new-epic path would be indistinguishable. The `sdlc:epic`
+label is the type filter that always works.
 
 **Reuse a hit only if its summary is exactly `[epic] <slug>`.** JQL's `~`
 is fuzzy word matching — it is the only operator JQL offers on `summary`,
@@ -116,11 +152,31 @@ so the exactness test happens on the returned issue, not in the query.
 Both guards matter: `labels = "sdlc:epic"` keeps hand-made epics out of
 the result set, and the exact-summary test keeps a fuzzy word overlap
 ("auth" matching "Auth rate limiting") from adopting an unrelated epic
-and filing every task in the project underneath it. No exact match →
+and filing every task in the project underneath it.
+
+**A `~` miss is not proof of absence.** `summary ~` runs against Jira's
+text index, which lags issue creation by seconds to minutes, and it
+tokenizes — so a re-run moments after the epic was created can come back
+empty and file the duplicate this operation exists to prevent. The
+exact-summary post-filter removes false *positives*; nothing in it
+recovers a false *negative*. So before concluding "no epic exists",
+confirm with a second query that touches no text index:
+
+```
+tool: toolmap.ops.search
+jql:  project = "<project>" AND labels = "sdlc:epic"
+```
+
+then filter those results client-side for the exact summary `[epic]
+<slug>`. Only when **both** come back without an exact match may you
 treat it as "no epic exists" and create one.
 
-A qualifying hit means the epic exists: reuse its key and create nothing.
-This replaces the GitHub `gh issue list --search "<slug>"` check.
+A qualifying hit means the epic exists. That is the "an epic exists"
+branch of `ticket` step 2, which **stops and asks the user: update the
+existing epic in place, or abort?** Reusing the key and creating nothing
+is what "update in place" does on this backend; it is not a decision this
+operation makes on its own. This replaces the GitHub `gh issue list
+--search "<slug>"` check.
 
 Otherwise:
 
@@ -134,6 +190,22 @@ tool: toolmap.ops.create_issue
                ## Tasks
                - [ ] <REF> <title>       # backfilled once children exist
 ```
+
+Once the children exist, backfill that checklist — this is `ticket` step
+7:
+
+```
+tool: toolmap.ops.edit_issue
+  ref:         <epic key>
+  description: Spec: `<spec-path>` (commit <sha>)
+               ## Tasks
+               - [ ] <REF> <title>       # one line per child, in T-order
+```
+
+`edit_issue` **replaces the description wholesale**, which is what this
+step wants — but it means the `Spec: <path> (commit <sha>)` line must be
+re-emitted along with the checklist. Send only the `## Tasks` block and
+the spec provenance is gone.
 
 The `## Tasks` checklist is written for humans, exactly as on GitHub, with
 `PROJ-123` references in place of `#123`. The authoritative parent-child
@@ -206,13 +278,32 @@ must display **is blocked by** `<blocker>`. If it instead shows
 **blocks**, the arguments are swapped: reverse them and re-link. Confirm
 this once per server, not once per link.
 
+**Re-linking does not undo the wrong link.** The tool map has no unlink
+slot and the Atlassian MCP servers expose no delete-link tool, so the
+mis-directed link stays until a human removes it in the Jira UI. Say so
+in the run — name the stray link and the two tickets — rather than
+leaving a backwards edge for `next` to read. Better: calibrate the
+direction once on a throwaway pair of tickets, before linking anything
+real.
+
 ### `list_open_tasks`
 
 ```
 tool: toolmap.ops.search
-jql:  project = <project> AND labels = "sdlc:task" AND statusCategory != Done
+jql:  project = "<project>" AND labels = "sdlc:task" AND statusCategory != Done
 expand: issue links, labels, description, created
 ```
+
+**Drain the pagination before you filter anything.** JIRA search is
+paged: the tool takes a page size (`maxResults`, capped server-side) and
+returns a continuation token (`nextPageToken`, or a `startAt` offset on
+older schemas). Keep requesting until no token comes back, and only then
+scope, filter, or normalize. Two of the three scoping rows below are
+client-side post-filters over whatever the search returned — run one over
+page 1 alone on a project with many `sdlc:task` issues and you get a
+non-empty but truncated set, which is the one shape the empty-result
+cross-check cannot catch. `next` then ranks leverage over a partial
+graph and reports a confident wrong answer.
 
 Scoped to one epic (`sdlc:next <epic ref>`), narrow by **whichever
 mechanism `create_task` actually used** for the epic edge:
@@ -233,16 +324,34 @@ When the scoping mechanism is not known up front, read the description
 that works on every project layout.
 
 **Fail loudly, never emptily.** If the scoped set comes back empty,
-cross-check it against the epic's own `## Tasks` checklist via
-`get_state` — exactly as the GitHub path does. Checklist non-empty but
-scoped set empty means the epic edge could not be read: **stop and
-report** which mechanisms were tried. Only an epic whose checklist is
-also empty may legitimately answer "no open tasks".
+cross-check it against the epic's own `## Tasks` checklist: read the epic
+with `get_state`, then read each ref the checklist names with `get_state`
+too. **Alarm only on a ref that is not Done yet is missing from the
+scoped set** — that combination, and only that one, means the epic edge
+could not be read; **stop and report** which mechanisms were tried.
+
+The checklist's `- [ ]` boxes are not evidence. Nothing in the pipeline
+ever ticks or prunes them — `ticket` step 7 writes every line unchecked
+and no later step touches the epic body — so an epic whose tasks are all
+finished still presents a non-empty checklist. Since the query above
+excludes `statusCategory = Done`, its scoped set is legitimately empty
+there, and an unconditional alarm would hard-stop `sdlc:next <epic>` on
+every epic's normal terminal run. An epic whose named refs are all Done
+(or whose checklist is empty) answers "no open tasks" and the run
+continues.
+
+This cross-check is JIRA-only; there is no GitHub counterpart to match.
+`sdlc:next` step 2 runs no such check, and step 7 *reports the frontier*
+for an exhausted epic rather than stopping. The check exists here because
+JIRA has three possible epic-edge mechanisms and a silently unreadable
+one is indistinguishable from an empty result — a failure mode the
+GitHub path does not have.
 
 The caller is always a subagent. **Normalize inside that subagent** to the
 node shape the main loop expects — `{ref, title, dependsOn, inProgress,
 inReview, assigned, ops, createdAt}` (`sdlc:next` currently names that
-first field `number`; T4 generalizes it to `ref` for both backends) —
+first field `number`; T3 — issue #4 — generalizes it to `ref` for both
+backends) —
 where `dependsOn` is the list of
 inbound "is blocked by" refs and `inProgress` / `inReview` / `ops` are
 label tests. **`assigned` is always `false` on JIRA**: the claim is the
@@ -260,8 +369,13 @@ description, and `implement` step 1 reading `## Depends on`:
 ```
 tool: toolmap.ops.get_issue
   ref: <ticket ref>
-returns: status category, labels, assignee, summary, description
+returns: status category, labels, summary, description
 ```
+
+The assignee field comes back too, and it is fine to show a human. It is
+**not** part of the state this adapter acts on: `list_open_tasks`
+normalizes `assigned` to `false` unconditionally, and readiness gates on
+the `sdlc:in-progress` label — see `claim` below.
 
 **Open ⟺ `statusCategory != Done`. Never test a status name.** Projects
 rename their terminal state — "Shipped", "Released", "Closed" — and
@@ -270,11 +384,22 @@ keeps the pipeline out of custom workflow configuration entirely.
 
 ### `claim`
 
+A read-modify-write, because `edit_issue` replaces the label array
+wholesale:
+
 ```
-tool: toolmap.ops.edit_issue
-  ref:    <ticket ref>
-  labels: add "sdlc:in-progress"
+1. tool: toolmap.ops.get_issue      # read the current labels
+     ref: <ticket ref>
+2. tool: toolmap.ops.edit_issue     # write the complete resulting set
+     ref:    <ticket ref>
+     labels: <every label read back> + "sdlc:in-progress"
 ```
+
+**Send the whole set, never just the new label.** `sdlc:task` and any
+`ops` label must survive: dropping `sdlc:task` removes the ticket from
+`list_open_tasks` permanently — its JQL matches on that label — and from
+`sdlc:next`'s leverage graph with it, so claiming a ticket would make it
+disappear from the pipeline that just claimed it.
 
 **On JIRA the label alone is the claim. The adapter never sets an
 assignee.** Atlassian Cloud wants an accountId to assign an issue, and
@@ -298,11 +423,22 @@ gate; it never makes a ticket un-ready.
 
 ### `mark_in_review`
 
+The same read-modify-write as `claim`:
+
 ```
-tool: toolmap.ops.edit_issue
-  ref:    <ticket ref>
-  labels: remove "sdlc:in-progress", add "sdlc:in-review"
+1. tool: toolmap.ops.get_issue
+     ref: <ticket ref>
+2. tool: toolmap.ops.edit_issue
+     ref:    <ticket ref>
+     labels: <every label read back>, minus "sdlc:in-progress",
+             plus "sdlc:in-review"
 ```
+
+Again the full set: `sdlc:task` and any `ops` label are carried across
+untouched. This operation runs *after* `claim`, so a set-shaped write
+that forgot them here is the one that makes the loss unrecoverable — the
+ticket is gone from `list_open_tasks` with no later step that would put
+it back.
 
 This is a **label change, not a workflow transition** — see "What the
 pipeline never does" below.
@@ -362,11 +498,13 @@ ticket stays open until you move it."*
 | JIRA MCP erroring or unauthenticated | **Stop and report.** Never fall back to GitHub — filing tickets into the wrong system is worse than a hard stop. |
 | A cached tool name is absent from `ToolSearch` | Re-probe per `backend-bind.md`, write back with `set-toolmap`, continue. Stale maps are never fatal. |
 | `toolmap.ops.link_issues` is unset (server has no issue linking) | Fall back to parsing the `## Depends on` prose as the dependency edge, and **say so once** in the run rather than silently dropping the graph. |
-| A scoped `list_open_tasks` returns nothing but the epic's `## Tasks` checklist is non-empty | The epic edge is unreadable. **Stop and report** the mechanisms tried. Never answer "nothing ready" from an empty scoped set. |
+| A scoped `list_open_tasks` returns nothing, and a ref named in the epic's `## Tasks` checklist is **not Done** | The epic edge is unreadable. **Stop and report** the mechanisms tried. Never answer "nothing ready" from an empty scoped set whose refs are still open. |
+| A scoped `list_open_tasks` returns nothing and every checklist ref is Done | Normal — the epic is finished. Answer "no open tasks" and continue. The unticked `- [ ]` boxes mean nothing; the pipeline never ticks them. |
 | `toolmap.ops.search` is unset | Stop and report. Without search there is no `list_open_tasks`, no idempotency check, and `next` cannot rank anything. |
 | `resolve` said `use-github` but this file was opened | Something mis-routed. Stop, re-run `resolve`, and follow its `action`. |
 | Ticket ref not found, or `project` does not exist | Stop and report. Do **not** create a replacement ticket — a wrong-project ticket is invisible work. |
 | `site` or `project` is null on a `use-jira` binding | The cache entry is incomplete. Stop and report; `sdlc-backend.sh unset` makes the next run re-bind. |
+| `cloud_id` is null and the tool schema requires a cloud id | Try `site` in its place — the official server accepts the site URL as `cloudId`. If `site` is also null, the cache entry is incomplete: stop and report, and `unset` to re-bind. A server whose schema takes no cloud id needs neither. |
 
 ## Red flags
 
@@ -375,6 +513,14 @@ ticket stays open until you move it."*
 - Letting raw JIRA JSON reach the main loop from the `list_open_tasks`
   scout — that is the context blowup the delegation exists to prevent.
 - Reversing the Blocks direction — inverts the leverage ranking silently.
+- Sending `edit_issue` only the label you meant to add or remove — the
+  `labels` field is a whole-array replacement, so that write deletes
+  `sdlc:task` and any `ops` label along with it, and the ticket vanishes
+  from `list_open_tasks` for good. Read with `get_issue` first, write the
+  complete set.
+- Filtering or ranking a `toolmap.ops.search` result before draining
+  `nextPageToken` — a truncated set looks like a small project, not like
+  an error.
 - Reusing an epic on a fuzzy `summary ~` hit alone — adopts a stranger's
   epic and parents the whole project under it. Require the `sdlc:epic`
   label *and* an exact `[epic] <slug>` summary.
