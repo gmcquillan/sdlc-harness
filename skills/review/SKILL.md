@@ -100,7 +100,7 @@ verdicts, and judgment. Create a todo per checklist item.
      ```
    - **Tier C:** `gh pr review <PR#> --request-changes` with the summary,
      create a Tier-B-style `sdlc:task` for the redo, and recommend
-     `/sdlc:implement <issue#>` in a fresh session. Do NOT patch the branch.
+     `/sdlc:implement <ref>` in a fresh session. Do NOT patch the branch.
 
    Report what was fixed, the URLs of any tickets created, and any redo
    recommendation.

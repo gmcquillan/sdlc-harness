@@ -85,5 +85,5 @@ Pure translation plus `gh` calls. Create a todo per checklist item.
 ## Red flags
 
 - Creating issues before the dry-run approval → human gate violated.
-- Children created out of dependency order → forward `#` references that
+- Children created out of dependency order → forward refs that
   don't exist yet.
