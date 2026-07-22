@@ -10,8 +10,15 @@ input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)
 
 # Gate only `git push`. Tolerate flags/remotes between the words; stop at
-# a shell separator so `git commit && push` does not match.
-printf '%s' "$cmd" | grep -Eq '\bgit\b[^;&|]*\bpush\b' || exit 0
+# a shell separator so `git commit && push` does not match. `tr` breaks the
+# command at those separators so both words must land in one segment, and
+# the bracket classes stand in for `\b` -- a GNU-only extension whose BSD
+# counterpart `[[:<:]]` GNU grep rejects. Same reasoning as cmd_sniff in
+# bin/sdlc-backend.sh; here the match is boolean, so `grep -q` may consume
+# the boundary characters freely.
+printf '%s' "$cmd" | tr ';&|' '\n\n\n' \
+  | grep -Eq '(^|[^[:alnum:]_])git([^[:alnum:]_].*)?[^[:alnum:]_]push([^[:alnum:]_]|$)' \
+  || exit 0
 
 # Intentional bypass (doc-only push, temporarily broken linter, etc.).
 [ -n "${SDLC_SKIP_LINT:-}" ] && exit 0

@@ -211,10 +211,27 @@ SNIFF_DENYLIST='UTF|ISO|RFC|CVE|SHA|MD|AES|RSA|TLS|SSL|HTTP|UTC|GMT|X86|ARM|PEP|
 cmd_sniff() {
   [ $# -eq 0 ] || die "sniff: unexpected argument: $1" 2
   git rev-parse --git-dir >/dev/null 2>&1 || exit 3
+  # Word boundaries are deliberately not a regex operator here. `\b` is a
+  # GNU extension (on BSD grep it reads as a literal `b`, so the whole
+  # pipeline silently yields nothing) and `[[:<:]]`/`[[:>:]]` is the
+  # BSD-only spelling GNU grep rejects -- there is no portable third
+  # spelling. So `tr` splits the stream on every character that cannot
+  # appear inside a key, and "on a word boundary" becomes "is the whole
+  # token", which plain `^`/`$` express.
+  #
+  # A bracket class -- (^|[^[:alnum:]_]) -- was rejected because `grep -o`
+  # consumes the boundary character: adjacent keys ("K-1 K-2 K-3") then
+  # under-count, and the consumed character rides into the denylist below,
+  # where " CVE-2024" no longer equals CVE and stops being rejected.
+  #
+  # The trailing (-|$) is what `\b` bought: within a token `-` is the only
+  # possible non-word character, so it rejects PROJ-123abc while still
+  # taking the CVE-2024 prefix of CVE-2024-1234.
   { git log -n 500 --format='%s%n%b' 2>/dev/null
     git branch -a --format='%(refname:short)' 2>/dev/null
-  } | grep -oE '\b[A-Z][A-Z0-9]{1,9}-[0-9]+\b' \
-    | sed 's/-[0-9]*$//' \
+  } | tr -cs 'A-Za-z0-9_-' '\n' \
+    | grep -E '^[A-Z][A-Z0-9]{1,9}-[0-9]+(-|$)' \
+    | sed 's/-[0-9].*$//' \
     | grep -vxE "$SNIFF_DENYLIST" \
     | sort | uniq -c | sort -rn \
     | awk '$1 >= 3 { print $2, $1 }'
