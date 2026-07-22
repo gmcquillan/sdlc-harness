@@ -31,10 +31,12 @@ Pure translation plus `gh` calls. Create a todo per checklist item.
 
 4. **Dry-run gate:** parse every `### T<n>:` block and present a table —
    T#, title, criteria count, depends-on — headed by
-   `Backend: <github|jira> · Project: <repo or JIRA key>`, both read off
-   step 0's resolve output (on the GitHub path `backend` and `project`
-   are null, so say `github` and its `repo`), and the
-   epic title (`[epic] <spec slug>`). Get explicit user approval BEFORE
+   `Backend: <github|jira> · Project: <owner/name or JIRA key>`, both
+   read off step 0's resolve output: `backend`, or `github` when it is
+   null; `project`, or when that is null the `owner/name` tail of `repo`
+   (which reads `host/owner/name`, or `path:<dir>` for a repo with no
+   origin — show that one whole). Then the epic title
+   (`[epic] <spec slug>`). Get explicit user approval BEFORE
    creating anything. This is a human gate; do not skip it — the
    `Backend:` line is what stops an epic being filed into the wrong
    system.
