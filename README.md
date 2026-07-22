@@ -139,8 +139,9 @@ protection.
 
 The tests cover the hooks (context tripwire thresholds, handoff pickup,
 lint-before-push detection), the backend resolver (`bin/sdlc-backend.sh`),
-and validate every skill's frontmatter plus the ticket-backend invariants
-described under [Ticket backends](#ticket-backends).
+validate every skill's frontmatter plus the ticket-backend invariants
+described under [Ticket backends](#ticket-backends), and content-check the
+load-bearing claims in individual skill bodies.
 
 ## Design docs
 
