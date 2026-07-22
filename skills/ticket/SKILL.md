@@ -30,9 +30,12 @@ Pure translation plus `gh` calls. Create a todo per checklist item.
    ```
 
 4. **Dry-run gate:** parse every `### T<n>:` block and present a table —
-   T#, title, criteria count, depends-on — plus the epic title
-   (`[epic] <spec slug>`). Get explicit user approval BEFORE creating
-   anything. This is a human gate; do not skip it.
+   T#, title, criteria count, depends-on — headed by
+   `Backend: <github|jira> · Project: <owner/repo or JIRA key>` and the
+   epic title (`[epic] <spec slug>`). Get explicit user approval BEFORE
+   creating anything. This is a human gate; do not skip it — the
+   `Backend:` line is what stops an epic being filed into the wrong
+   system.
 5. **Create the epic** (placeholder body; task list is filled in step 7):
 
    ```bash
@@ -44,7 +47,7 @@ Pure translation plus `gh` calls. Create a todo per checklist item.
 
 6. **Create child issues**, one per decomposition task, in T-order (so
    depends-on references point backward at existing issues). Record each
-   created number to translate `T<n>` → `#<issue>`:
+   created ref to translate `T<n>` → `<ref>`:
 
    ```bash
    gh issue create --label "sdlc:task" --title "<T-title>" --body "## Context
