@@ -15,7 +15,7 @@ verdicts, and judgment. Create a todo per checklist item.
    on `bind-needed` read `references/backend-bind.md` and follow it.
 1. **Gather metadata (main loop, small):**
    `gh pr view <PR#> --json title,body,headRefName,files` — extract the
-   linked issue from `Closes #<n>`, then
+   linked ticket ref from the PR body (`Closes #<n>` on GitHub), then
    `gh issue view <n> --json body` for the acceptance criteria and spec
    pointer. Do NOT fetch the diff into this context.
 2. **Fan out reviewers** per `fable-harness:fan-out` — three subagents,
@@ -76,7 +76,7 @@ verdicts, and judgment. Create a todo per checklist item.
      branch (`git push`) so the updated PR is what step 2 re-reviews, then
      re-run this checklist from step 2.
    - **Tier B:** resolve the epic from the reviewed issue's `## Epic`
-     section (the `#<n>` under that heading), then create a child issue in
+     section (the ref under that heading), then create a child issue in
      the same section format `sdlc:task` issues use, so `sdlc:next` /
      `sdlc:implement` pick it up:
 
