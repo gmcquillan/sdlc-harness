@@ -86,5 +86,18 @@ for entry in $gh_floors; do
     bad "$name: $got inline gh commands, floor is $want"
   fi
 done
+
+# --- cleanup's remote-mutation carve-out for a confirmed JIRA close -----
+# spec T3: skills/cleanup/SKILL.md's "never modifies remote state"
+# invariant needs an explicit, narrow carve-out for a confirmed JIRA
+# transition, worded identically to the design doc so it is traceable.
+carve_out="except a confirmed JIRA ticket transition, gated exactly like a branch deletion"
+cf="$root/skills/cleanup/SKILL.md"
+if grep -qF "$carve_out" "$cf"; then
+  ok "cleanup: states the JIRA-transition carve-out to its remote-state invariant"
+else
+  bad "cleanup: missing the JIRA-transition carve-out to its remote-state invariant"
+fi
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

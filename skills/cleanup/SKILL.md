@@ -14,11 +14,12 @@ the branch is not an ancestor of base, and the remote branch still exists,
 so its upstream is not `[gone]`. Neither local signal fires. This skill
 reclaims them — safely, behind a human gate.
 
-It never MUTATES anything beyond the local workspace: it does not push,
-does not delete remote branches, does not modify any remote state, and
-never deletes uncommitted work. It DOES make one read-only remote query
-(`gh pr list`, step 2) to learn which branches already have merged PRs.
-Create a todo per checklist item.
+It never MUTATES anything beyond the local workspace —
+except a confirmed JIRA ticket transition, gated exactly like a branch deletion:
+it does not push, does not delete remote branches, does not modify any
+other remote state, and never deletes uncommitted work. It DOES make one
+read-only remote query (`gh pr list`, step 2) to learn which branches
+already have merged PRs. Create a todo per checklist item.
 
 ## Checklist
 
@@ -123,6 +124,28 @@ Create a todo per checklist item.
        user can re-run where `gh` works.
      - Always exclude: the current branch, the base branch, and any
        branch checked out in a worktree that is not itself being removed.
+   - **JIRA ticket status for branches classified PR merged.** Only when
+     `bin/sdlc-backend.sh resolve` (run once for this whole step, not once
+     per branch) reports `action: use-jira`; on any other action, skip this
+     sub-step entirely — there is no JIRA ticket to resolve.
+
+     For each branch classified **PR merged** above, parse `<ref>` from
+     `sdlc/<ref>-<slug>`. If `<ref>` is not a bare integer (a JIRA key,
+     e.g. `PROJ-123`), resolve the ticket with the adapter's `get_state`
+     operation (`references/backend-jira.md`) to confirm it is not already
+     Done (`statusCategory != Done`). Already Done means no close-on-merge
+     item is needed for that branch.
+
+     If it is not yet Done and `workflow.done` is uncached (from the same
+     `resolve` output), run "Discovering a workflow transition"
+     (`references/backend-jira.md`) against this specific ticket — it will
+     be in whatever state PR-merged tickets sit in (e.g. "In Review"),
+     which is a valid state to probe transitions from — and cache the name
+     via `sdlc-backend.sh set-workflow --done <name>`.
+
+     This scan step only discovers and resolves state; it transitions
+     nothing. The transition itself happens in step 5, after the step 4
+     confirmation.
 3. **Report** the findings grouped as: Uncommitted (per tree),
    Prunable worktrees, Stray handoffs, Deletable branches (merged /
    PR-merged / upstream-gone, each with its reason — for a PR-merged
@@ -138,6 +161,14 @@ Create a todo per checklist item.
    selected subset. Delete NOTHING before an explicit yes. Deletable-but-
    unverified branches are confirmed ONE AT A TIME, with their commits
    shown — a blanket "yes, all" never sweeps them up.
+
+   For a branch with a pending close-on-merge item (from step 2's JIRA
+   ticket status check), present **"close JIRA `<ref>`"** as its own
+   confirmable line item, next to — never merged into — that branch's
+   deletion confirmation. Confirmed ONE AT A TIME, the same way
+   deletable-but-unverified branches already are: a blanket "yes, all"
+   never sweeps up a ticket transition any more than it sweeps up an
+   unverified branch deletion.
 5. **Execute** only what was confirmed:
    - Worktrees: `git worktree remove <path>` (add `--force` ONLY for a
      dirty worktree the user explicitly approved), then `git worktree
@@ -147,18 +178,30 @@ Create a todo per checklist item.
      unverified — none of those is guaranteed to be an ancestor of the
      local base. State the reason when you do ("PR #13 squash-merged as
      f3948f5").
+   - **JIRA ticket close:** for each confirmed "close JIRA `<ref>`" item,
+     call `toolmap.ops.transition_issue` with the id matching the cached
+     `workflow.done` name among that ticket's live `get_transitions`
+     options (per "Discovering a workflow transition",
+     `references/backend-jira.md`). State the ticket ref and the
+     transition name when you do it. This is the one remote-state
+     mutation this skill ever performs, and it happens only here, after
+     the step 4 gate — never during the read-only scan.
    - **Stray handoffs:** delete confirmed `.handoff-*.md` files. When a
      worktree is removed, also delete any handoff that lived in it or that
      names its path in `## Refs`, so the pointer never outlives its target.
    - **Uncommitted files: reported only, never deleted** — leave them for
      the human.
-6. **Report** exactly what was removed, and restate any dirty trees or
-   review-manually branches left for the user to handle.
+6. **Report** exactly what was removed and which JIRA tickets were
+   closed, and restate any dirty trees or review-manually branches left
+   for the user to handle.
 
 ## Safety invariants
 
-- Remote state is never mutated. The single `gh pr list` call is
-  read-only; nothing is pushed and no remote branch is deleted.
+- Remote state is never mutated,
+  except a confirmed JIRA ticket transition, gated exactly like a branch deletion.
+  The single `gh pr list` call is read-only; nothing is pushed and no remote
+  branch is deleted; the one JIRA transition confirmed at the step 4 gate is
+  the sole exception.
 - Uncommitted work is surfaced, never removed.
 - The current branch and the base branch are never deleted.
 - A worktree with uncommitted changes is never force-removed without
@@ -193,3 +236,6 @@ Create a todo per checklist item.
   uncommitted work is the user's.
 - Silently skipping the worktree you are standing in → say you cannot
   remove it and where to re-run from; do not pretend it is clean.
+- Transitioning a JIRA ticket without the step 4 confirmation, or
+  bundling it into a blanket branch-deletion "yes" — it gets its own
+  confirmable line item, one at a time, same as an unverified branch.
