@@ -184,6 +184,58 @@ cmd_set() {
     | cache_write
 }
 
+cmd_set_assignee() {
+  local account_id=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --account-id)
+        [ $# -ge 2 ] || die "set-assignee: $1 requires a value" 2 ;;
+    esac
+    case "$1" in
+      --account-id) account_id="${2:-}"; shift 2 ;;
+      *) die "set-assignee: unknown flag: $1" 2 ;;
+    esac
+  done
+  [ -n "$account_id" ] || die "set-assignee: --account-id is required" 2
+  local key; key=$(repo_key) || exit 3
+  lock_acquire; cache_quarantine
+  cache_read | jq \
+    --arg k "$key" --arg a "$account_id" \
+    '.version = 1
+     | .repos = (.repos // {})
+     | .repos[$k] = ((.repos[$k] // {}) + {assignee_account_id: $a})' \
+    | cache_write
+}
+
+cmd_set_workflow() {
+  local start="" done_val="" have_start=0 have_done=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --start|--done)
+        [ $# -ge 2 ] || die "set-workflow: $1 requires a value" 2 ;;
+    esac
+    case "$1" in
+      --start) start="${2:-}";    have_start=1; shift 2 ;;
+      --done)  done_val="${2:-}"; have_done=1;  shift 2 ;;
+      *) die "set-workflow: unknown flag: $1" 2 ;;
+    esac
+  done
+  if [ "$have_start" -eq 0 ] && [ "$have_done" -eq 0 ]; then
+    die "set-workflow: at least one of --start or --done is required" 2
+  fi
+  local key; key=$(repo_key) || exit 3
+  lock_acquire; cache_quarantine
+  cache_read | jq \
+    --arg k "$key" --arg start "$start" --arg done_v "$done_val" \
+    '.version = 1
+     | .repos = (.repos // {})
+     | .repos[$k] = ((.repos[$k] // {})
+         + {workflow: ((.repos[$k].workflow // {})
+             + (if $start  == "" then {} else {start: $start}  end)
+             + (if $done_v == "" then {} else {done:  $done_v} end))})' \
+    | cache_write
+}
+
 cmd_unset() {
   [ $# -eq 0 ] || die "unset: unexpected argument: $1" 2
   local key; key=$(repo_key) || exit 3
@@ -256,20 +308,24 @@ cmd_resolve() {
   printf '%s' "$cache" | jq -c --arg k "$key" --arg a "$action" \
     '{repo:     $k,
       action:   $a,
-      backend:  (.repos[$k].backend  // null),
-      project:  (.repos[$k].project  // null),
-      cloud_id: (.repos[$k].cloud_id // null),
-      site:     (.repos[$k].site     // null),
-      toolmap:  (.jira_toolmap       // null)}'
+      backend:  (.repos[$k].backend             // null),
+      project:  (.repos[$k].project             // null),
+      cloud_id: (.repos[$k].cloud_id            // null),
+      site:     (.repos[$k].site                // null),
+      toolmap:  (.jira_toolmap                  // null),
+      assignee_account_id: (.repos[$k].assignee_account_id // null),
+      workflow: (.repos[$k].workflow            // null)}'
 }
 
 case "${1:-}" in
-  resolve)      shift; cmd_resolve "$@" ;;
-  sniff)        shift; cmd_sniff "$@" ;;
-  set)          shift; cmd_set "$@" ;;
-  unset)        shift; cmd_unset "$@" ;;
-  set-toolmap)  shift; cmd_set_toolmap "$@" ;;
-  get-toolmap)  shift; cmd_get_toolmap "$@" ;;
-  "") die "usage: sdlc-backend.sh <resolve|sniff|set|unset|set-toolmap|get-toolmap>" 2 ;;
+  resolve)       shift; cmd_resolve "$@" ;;
+  sniff)         shift; cmd_sniff "$@" ;;
+  set)           shift; cmd_set "$@" ;;
+  unset)         shift; cmd_unset "$@" ;;
+  set-toolmap)   shift; cmd_set_toolmap "$@" ;;
+  get-toolmap)   shift; cmd_get_toolmap "$@" ;;
+  set-assignee)  shift; cmd_set_assignee "$@" ;;
+  set-workflow)  shift; cmd_set_workflow "$@" ;;
+  "") die "usage: sdlc-backend.sh <resolve|sniff|set|unset|set-toolmap|get-toolmap|set-assignee|set-workflow>" 2 ;;
   *) die "unknown command: $1" 2 ;;
 esac
