@@ -68,8 +68,9 @@ the local server name.
 **Use the `toolmap` you already hold from `resolve`.** It is the same
 object — `{server, probed_at, ops:{…}}` — and re-reading it costs a
 process for nothing. Resolve every operation below through
-`toolmap.ops.<slot>`; the six adapter slots are `create_issue`, `search`,
-`get_issue`, `edit_issue`, `comment`, and `link_issues`. (`list_projects`
+`toolmap.ops.<slot>`; the nine adapter slots are `create_issue`, `search`,
+`get_issue`, `edit_issue`, `comment`, `link_issues`, `get_current_user`,
+`get_transitions`, and `transition_issue`. (`list_projects`
 and `list_sites` are in the map too, but they are bind-time only — no
 operation here uses them.)
 
@@ -351,10 +352,13 @@ The caller is always a subagent. **Normalize inside that subagent** to the
 node shape the main loop expects — `{ref, title, dependsOn, inProgress,
 inReview, assigned, ops, createdAt}` — where `dependsOn` is the list of
 inbound "is blocked by" refs and `inProgress` / `inReview` / `ops` are
-label tests. **`assigned` is always `false` on JIRA**: the claim is the
-`sdlc:in-progress` label, not the assignee field — see `claim` below.
-Raw JIRA issue-link JSON must never reach the main loop;
-avoiding that is the entire reason the gather step is delegated.
+label tests. **`assigned` is always `false` on JIRA, regardless of
+whether the ticket has an assignee.** The claim signal readiness gates on
+is the `sdlc:in-progress` label; `claim` (below) may also set an
+assignee as a courtesy to humans, but that field is never read by this
+normalization — see `claim` for what it does and does not gate. Raw
+JIRA issue-link JSON must never reach the main loop; avoiding that is
+the entire reason the gather step is delegated.
 
 ### `get_state`
 
@@ -369,20 +373,71 @@ tool: toolmap.ops.get_issue
 returns: status category, labels, summary, description
 ```
 
-The assignee field comes back too, and it is fine to show a human. It is
-**not** part of the state this adapter acts on: `list_open_tasks`
-normalizes `assigned` to `false` unconditionally, and readiness gates on
-the `sdlc:in-progress` label — see `claim` below.
+The assignee field comes back too — `claim` (below) may have set it —
+and it is fine to show a human. It is **not** part of the state this
+adapter acts on for readiness: `list_open_tasks` normalizes `assigned` to
+`false` unconditionally, and readiness gates on the `sdlc:in-progress`
+label — see `claim` below.
 
 **Open ⟺ `statusCategory != Done`. Never test a status name.** Projects
 rename their terminal state — "Shipped", "Released", "Closed" — and
 `statusCategory` is the only field that survives that, which is also what
 keeps the pipeline out of custom workflow configuration entirely.
 
+### Discovering a workflow transition
+
+Both `claim`'s start-transition step and `sdlc:cleanup`'s close-on-merge
+step need the same thing: a project-wide, human-confirmed transition
+name, discovered lazily against a live ticket rather than typed blind at
+bind time. This procedure is written once here; neither caller repeats
+it — they reference it by this heading.
+
+A fresh project has no sample ticket to probe at bind time, and
+`get_transitions` is state-dependent — the transitions reachable from
+"To Do" differ from those reachable from "In Review". So the first time
+an operation needs a transition name that is not yet cached
+(`workflow.start` for `claim`, `workflow.done` for close-on-merge):
+
+1. Call `toolmap.ops.get_transitions` on the **actual ticket being acted
+   on** — never a different ticket, and never a cached list from an
+   earlier call.
+2. Present the live options it returns for that ticket's current state
+   and ask the human which one applies ("which one means start work?"
+   for `claim`, "which one means done?" for close-on-merge).
+3. Cache the chosen transition's **name**, not its `id` — ids are scoped
+   to the source state and issue type, so an id cached from one ticket's
+   probe would not resolve on the next ticket; names are stable
+   project-wide. Write it with `sdlc-backend.sh set-workflow --start
+   <name>` (`claim`) or `sdlc-backend.sh set-workflow --done <name>`
+   (close-on-merge).
+4. Match the cached name against this ticket's live options from step 1
+   to find the id to pass to `toolmap.ops.transition_issue`.
+
+Every later call — a different ticket, a different session — re-probes
+`get_transitions` fresh for the specific ticket in hand and looks for the
+cached name among the returned options. **If the cached name is not
+among the live options** (the workflow changed, or this ticket's current
+state cannot reach it), stop and report which name was expected and what
+was actually offered. Never substitute a guess. Offer to re-discover:
+running `set-workflow` again overwrites only the slot passed (`--start`
+or `--done`), leaving the other one untouched — see Task 1's cache merge
+behavior.
+
+If the ticket is already past the state the cached transition would move
+it to (edge case: reopened work already past "start"), skip the
+transition and say so — this is not a failure.
+
+The same "ask once, cache the stable identifier" pattern resolves "who am
+I" for `claim`'s assignee step, except there the identifier is an
+`accountId` from `get_current_user` rather than a transition name.
+
 ### `claim`
 
-A read-modify-write, because `edit_issue` replaces the label array
-wholesale:
+Three independent steps run alongside each other. Only the first existed
+before this design; it is otherwise unchanged.
+
+**1. The label** — a read-modify-write, because `edit_issue` replaces the
+label array wholesale:
 
 ```
 1. tool: toolmap.ops.get_issue      # read the current labels
@@ -398,15 +453,54 @@ wholesale:
 `sdlc:next`'s leverage graph with it, so claiming a ticket would make it
 disappear from the pipeline that just claimed it.
 
-**On JIRA the label alone is the claim. The adapter never sets an
-assignee.** Atlassian Cloud wants an accountId to assign an issue, and
-the bind probe defines no user-lookup slot to turn "me" into one — by
-design. A live user lookup on every claim would buy nothing the label
-does not already do: the label is what prevents double pickup by parallel
-sessions, which is the whole job of this operation.
+**The label remains the pipeline's sole authoritative readiness/claim
+signal, unconditionally.** Steps 2 and 3 below are best-effort additions
+alongside it, never a replacement for it: a failure in either is reported
+to the user but must never block the label add, and the label add must
+never be skipped or delayed to retry either of them.
 
-That makes readiness read differently on the two backends, and this is
-the only place they differ:
+**2. The assignee** — independent of the label and of step 3:
+
+If `assignee_account_id` is uncached (check the `resolve` output this
+run's own step 0 already produced — do not call `resolve` again):
+
+- Call `toolmap.ops.get_current_user`. If that slot is absent from the
+  toolmap, fall back to `toolmap.ops.search`-reachable
+  `lookupJiraAccountId` with a search string the human supplies (their
+  name or email) — the fallback `backend-bind.md` documents for the
+  missing slot.
+- Show the resolved display name to the human for confirmation before
+  caching anything.
+- Cache the id: `sdlc-backend.sh set-assignee --account-id <id>`.
+- Call `toolmap.ops.edit_issue` to set the ticket's assignee field to
+  that id.
+
+If neither `get_current_user` nor the `lookupJiraAccountId` fallback
+resolves an account, skip the assignee step, say so once per session —
+not once per ticket — and continue. This is not a failure, and the label
+add above proceeds regardless.
+
+**3. The start transition** — independent of the label and of step 2:
+
+If `workflow.start` is uncached, run "Discovering a workflow transition"
+above against **this** ticket, caching the name with `sdlc-backend.sh
+set-workflow --start <name>`, then call `toolmap.ops.transition_issue`
+with the id matching that name among this ticket's live options.
+
+If `workflow.start` is already cached, re-probe `get_transitions` on this
+ticket fresh, confirm the cached name is still among the live options
+(stop and report per "Discovering a workflow transition" if it is not),
+and call `toolmap.ops.transition_issue` with its id.
+
+If the ticket is already past the state that transition would move it to
+(edge case: reopened work), skip the transition and say so — this is not
+a failure.
+
+A `transition_issue` error (permission, workflow condition unmet) is
+reported to the user; the label change — already applied, or applied
+alongside — stands regardless.
+
+Readiness reads exactly as it did before this design:
 
 | | GitHub | JIRA |
 |---|---|---|
@@ -415,8 +509,9 @@ the only place they differ:
 
 So wherever `sdlc:next` and `sdlc:implement` require a ticket to be
 **unassigned**, drop that clause on JIRA and gate on the absence of
-`sdlc:in-progress` instead. A human-set assignee is information, not a
-gate; it never makes a ticket un-ready.
+`sdlc:in-progress` instead. The assignee this operation now sets is
+information for a human, not a gate — a ticket's readiness never turns on
+it, on either backend.
 
 ### `mark_in_review`
 
@@ -479,15 +574,22 @@ is present, or from a key-prefixed PR title.
 
 ## What the pipeline never does
 
-**It never drives a JIRA workflow transition.** Status names and
-transition graphs vary per project, transitions fail in ways that are
-tedious to recover from, and a half-transitioned ticket is worse than an
-untouched one. `sdlc:in-progress` and `sdlc:in-review` are labels for
-exactly this reason.
+**It never drives a JIRA workflow transition beyond the two configured
+ones.** `claim` transitions status to a human-confirmed "start" state,
+and a merged ticket is transitioned to a human-confirmed "done" state
+through `sdlc:cleanup`'s close-on-merge step — both lazily discovered per
+"Discovering a workflow transition" above, both fail-soft. Every *other*
+state is untouched: `mark_in_review` stays a label change (`sdlc:in-review`),
+never a transition — a third configured transition was considered and
+declined. Status names and transition graphs vary per project outside
+these two configured names, transitions fail in ways that are tedious to
+recover from, and a half-transitioned ticket is worse than an untouched
+one for anything not covered by the lazy-discovery guardrail above.
 
-A human moves and closes the ticket when they merge. Approval in
-`sdlc:review` therefore ends: *"Ready for your merge decision — the
-ticket stays open until you move it."*
+Approval in `sdlc:review` still ends: *"Ready for your merge decision —
+the ticket stays open until you move it."* — and now, once the PR merges,
+`sdlc:cleanup` offers a confirmed close transition rather than requiring
+a human to move the ticket by hand.
 
 ## Failure modes
 
@@ -503,6 +605,12 @@ ticket stays open until you move it."*
 | Ticket ref not found, or `project` does not exist | Stop and report. Do **not** create a replacement ticket — a wrong-project ticket is invisible work. |
 | `site` or `project` is null on a `use-jira` binding | The cache entry is incomplete. Stop and report; `sdlc-backend.sh unset` makes the next run re-bind. |
 | `cloud_id` is null and the tool schema requires a cloud id | Try `site` in its place — the official server accepts the site URL as `cloudId`. If `site` is also null, the cache entry is incomplete: stop and report, and `unset` to re-bind. A server whose schema takes no cloud id needs neither. |
+| Cached `workflow.start`/`workflow.done` name absent from live transitions | Stop and report the expected name and the live options; do not guess a substitute. Offer to re-discover. |
+| `get_current_user` slot unset and no fallback resolves an account | Skip assignee only; still apply the label; say so once per session, not once per ticket. |
+| `transition_issue` call errors (permission, workflow condition unmet) | Stop and report; the label change (already applied, or applied alongside) stands regardless — labels are the pipeline's authoritative claim signal, not the Jira status. |
+| Ticket already in a state the cached transition can't reach (e.g. reopened past "start") | Not a failure — skip the transition, say so, continue. |
+| JIRA MCP erroring/unauthenticated | Stop and report, matching existing adapter policy — never fall back to GitHub. |
+| `cleanup`'s merged-PR map has no JIRA-shaped branch (`sdlc/<ref>-`) | No close-on-merge line item is offered; existing branch-only behavior is unchanged. |
 
 ## Red flags
 
@@ -526,7 +634,8 @@ ticket stays open until you move it."*
   parent field was rejected — returns empty, and empty reads as "nothing
   ready" instead of as a failure.
 - Gating readiness on an empty assignee field — on JIRA the claim is the
-  `sdlc:in-progress` label; the adapter never assigns anyone.
+  `sdlc:in-progress` label; an assignee, when `claim` sets one, is
+  information for a human, not a gate.
 - Writing `"${CLAUDE_PLUGIN_ROOT}/bin/sdlc-backend.sh"` or
   `bin/sdlc-backend.sh` — the first expands to a path that does not
   exist, the second only works from a checkout of this plugin. Bare
@@ -535,3 +644,8 @@ ticket stays open until you move it."*
   on GitHub.
 - Falling back to GitHub issues when JIRA errors — always stop instead.
 - Reading this file on the GitHub path at all.
+- Substituting a guessed transition name when the cached one is not among
+  `get_transitions`'s live options — stop and report instead, per
+  "Discovering a workflow transition".
+- Blocking the label add on an assignee-lookup or transition failure —
+  both are fail-soft; the label is not.
