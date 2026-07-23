@@ -26,5 +26,6 @@ n=$(printf '%s\n' "$files" | wc -l | tr -d ' ')
 echo "SDLC handoff pickup: $n handoff file(s) from a previous session:"
 printf '%s\n' "$files"
 echo "Invoke the sdlc:resume skill to continue that work. It verifies the \
-recorded state against git (trust git over prose) and archives the file."
+recorded state against git (trust git over prose) and archives the file \
+once that work is done."
 exit 0
