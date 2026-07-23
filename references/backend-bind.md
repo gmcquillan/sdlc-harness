@@ -53,19 +53,23 @@ names actually exist:
 ```json
 {"server": "atlassian",
  "probed_at": "YYYY-MM-DD",
- "ops": {"create_issue":  "mcp__atlassian__createJiraIssue",
-         "search":        "mcp__atlassian__searchJiraIssuesUsingJql",
-         "get_issue":     "mcp__atlassian__getJiraIssue",
-         "edit_issue":    "mcp__atlassian__editJiraIssue",
-         "comment":       "mcp__atlassian__addCommentToJiraIssue",
-         "link_issues":   "mcp__atlassian__createJiraIssueLink",
-         "list_projects": "mcp__atlassian__getVisibleJiraProjects",
-         "list_sites":    "mcp__atlassian__getAccessibleAtlassianResources"}}
+ "ops": {"create_issue":     "mcp__atlassian__createJiraIssue",
+         "search":           "mcp__atlassian__searchJiraIssuesUsingJql",
+         "get_issue":        "mcp__atlassian__getJiraIssue",
+         "edit_issue":       "mcp__atlassian__editJiraIssue",
+         "comment":          "mcp__atlassian__addCommentToJiraIssue",
+         "link_issues":      "mcp__atlassian__createJiraIssueLink",
+         "get_current_user": "mcp__atlassian__atlassianUserInfo",
+         "get_transitions":  "mcp__atlassian__getTransitionsForJiraIssue",
+         "transition_issue": "mcp__atlassian__transitionJiraIssue",
+         "list_projects":    "mcp__atlassian__getVisibleJiraProjects",
+         "list_sites":       "mcp__atlassian__getAccessibleAtlassianResources"}}
 ```
 
-Six of these — `create_issue`, `search`, `get_issue`, `edit_issue`,
-`comment`, `link_issues` — are what the adapter runs on. `list_projects`
-and `list_sites` are used only at bind time, by step 2 of this file, and
+Nine of these — `create_issue`, `search`, `get_issue`, `edit_issue`,
+`comment`, `link_issues`, `get_current_user`, `get_transitions`,
+`transition_issue` — are what the adapter runs on. `list_projects` and
+`list_sites` are used only at bind time, by step 2 of this file, and
 either may be missing on a server pinned to one fixed site. The names
 above are one server's — they are illustrative, not a table to copy.
 `probed_at` is a human-readable breadcrumb and nothing more: no code
@@ -74,7 +78,14 @@ still appears in `ToolSearch`, never by that date's age.
 
 **Omit a slot with no matching tool; never guess a name.** A missing
 `link_issues` has a defined fallback in `backend-jira.md`; an invented
-tool name just fails later, further from its cause.
+tool name just fails later, further from its cause. A missing
+`get_current_user` has a defined fallback too — `lookupJiraAccountId`
+with a human-supplied search string, reachable through the same
+`search`-style resolution — see `claim` in `backend-jira.md`. A missing
+`get_transitions` or `transition_issue` has no fallback: `claim`'s
+assignee step can still run, but its start-transition step cannot: that
+is covered by `claim`'s own fail-soft rule (report, never block the
+label), not by a substitute tool.
 
 ### Writing the map back
 
@@ -298,3 +309,6 @@ something else yields a false `use-github` and is never prompted for.
   long-lived.
 - Binding to JIRA without checking for open GitHub `sdlc:task` issues.
 - Creating a memory file on an install that has no memory directory.
+- Failing the whole bind because `get_current_user`, `get_transitions`,
+  or `transition_issue` has no matching tool — omit the slot; `claim`
+  degrades those steps gracefully, per `backend-jira.md`.

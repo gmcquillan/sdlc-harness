@@ -109,6 +109,12 @@ you bind the repo to it, `resolve` returns `use-jira` and the skills follow
 map; `references/backend-bind.md` covers the first-run binding prompt. The
 binding is cached per repo, so the probe runs once, not once per skill.
 
+On JIRA, `claim` now also sets the ticket's assignee and drives a
+project-specific, human-confirmed "start" workflow transition, and a
+merged ticket's status is closed via a similarly confirmed "done"
+transition offered through `sdlc:cleanup` — both lazily discovered
+against a live ticket rather than configured up front.
+
 `tests/validate-skills.sh` enforces the split: step 0 must call the
 resolver, both reference files must exist, no `references/backend-github.md`
 may appear, and the five skills that shell out to `gh` — `ticket`, `next`,

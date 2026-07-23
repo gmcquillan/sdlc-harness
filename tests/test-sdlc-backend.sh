@@ -115,6 +115,67 @@ ub="$tmp/unbound"; mkrepo "$ub" "git@github.com:a/unbound.git"
 eq "null" "$(cd "$ub" && "$SUT" resolve | jq -r '.backend')" \
    "unbound repo reports backend null"
 
+# --- cache: set-assignee / set-workflow merge into an existing binding --
+# assignee round-trips without disturbing anything set --backend jira wrote
+(cd "$cr" && "$SUT" set-assignee --account-id ACCT1)
+out=$(cd "$cr" && "$SUT" resolve)
+eq "ACCT1" "$(printf '%s' "$out" | jq -r '.assignee_account_id')" \
+   "set-assignee --account-id round-trips"
+eq "jira"  "$(printf '%s' "$out" | jq -r '.backend')"  \
+   "set-assignee does not clobber backend"
+eq "PROJ"  "$(printf '%s' "$out" | jq -r '.project')"  \
+   "set-assignee does not clobber project"
+eq "CID"   "$(printf '%s' "$out" | jq -r '.cloud_id')" \
+   "set-assignee does not clobber cloud_id"
+eq "https://acme.atlassian.net" "$(printf '%s' "$out" | jq -r '.site')" \
+   "set-assignee does not clobber site"
+
+# workflow round-trips, both fields set together
+(cd "$cr" && "$SUT" set-workflow --start "In Progress" --done "Done")
+out=$(cd "$cr" && "$SUT" resolve)
+eq "In Progress" "$(printf '%s' "$out" | jq -r '.workflow.start')" \
+   "set-workflow --start round-trips"
+eq "Done" "$(printf '%s' "$out" | jq -r '.workflow.done')" \
+   "set-workflow --done round-trips"
+eq "jira"  "$(printf '%s' "$out" | jq -r '.backend')"  \
+   "set-workflow does not clobber backend"
+eq "PROJ"  "$(printf '%s' "$out" | jq -r '.project')"  \
+   "set-workflow does not clobber project"
+eq "ACCT1" "$(printf '%s' "$out" | jq -r '.assignee_account_id')" \
+   "set-workflow does not clobber a previously-set assignee_account_id"
+
+# setting --start alone later preserves the already-cached --done
+(cd "$cr" && "$SUT" set-workflow --start "Building")
+out=$(cd "$cr" && "$SUT" resolve)
+eq "Building" "$(printf '%s' "$out" | jq -r '.workflow.start')" \
+   "a later set-workflow --start alone updates only start"
+eq "Done" "$(printf '%s' "$out" | jq -r '.workflow.done')" \
+   "...and preserves the previously-cached done (merge, not clobber)"
+
+# --- cache: assignee_account_id and workflow read as null when unset ----
+out=$(cd "$ub" && "$SUT" resolve)
+eq "null" "$(printf '%s' "$out" | jq -r '.assignee_account_id')" \
+   "unset assignee_account_id reads null"
+eq "null" "$(printf '%s' "$out" | jq -r '.workflow')" \
+   "unset workflow reads null"
+
+# --- set-assignee / set-workflow error paths -----------------------------
+sw="$tmp/setworkflow"; mkrepo "$sw" "git@github.com:a/setworkflow.git"
+(cd "$sw" && tmo 5 "$SUT" set-assignee --account-id) >/dev/null 2>&1
+eq "2" "$?" "set-assignee --account-id with no value exits 2, does not hang"
+(cd "$sw" && "$SUT" set-assignee >/dev/null 2>&1)
+eq "2" "$?" "set-assignee with no --account-id at all exits 2"
+(cd "$sw" && "$SUT" set-assignee --nope x >/dev/null 2>&1)
+eq "2" "$?" "set-assignee with an unknown flag exits 2"
+(cd "$sw" && "$SUT" set-workflow >/dev/null 2>&1)
+eq "2" "$?" "set-workflow with neither --start nor --done exits 2"
+(cd "$sw" && "$SUT" set-workflow --nope x >/dev/null 2>&1)
+eq "2" "$?" "set-workflow with an unknown flag exits 2"
+(cd "$sw" && tmo 5 "$SUT" set-workflow --start) >/dev/null 2>&1
+eq "2" "$?" "set-workflow --start with no value exits 2, does not hang"
+(cd "$sw" && "$SUT" set-workflow --start OK >/dev/null 2>&1)
+eq "0" "$?" "set-workflow --start alone succeeds"
+
 # --- cache: unset clears the binding ------------------------------------
 # On a repo of its own, so the malformed-cache section below still runs
 # with two live bindings that a silent discard could take with it.
@@ -262,7 +323,7 @@ eq "false" "$([ -e "$SDLC_HOME/repos.json" ] && echo true || echo false)" \
    "use-github path writes nothing to the cache"
 
 # the full resolve contract T3-T7 depend on
-for k in repo action backend project cloud_id site toolmap; do
+for k in repo action backend project cloud_id site toolmap assignee_account_id workflow; do
   [ "$(printf '%s' "$out" | jq "has(\"$k\")")" = "true" ] \
     && ok "resolve emits key '$k'" || bad "resolve missing key '$k'"
 done
@@ -514,6 +575,10 @@ eq "2" "$?" "get-toolmap with extra arguments exits 2"
 eq "3" "$?" "set outside a git repo exits 3"
 (cd "$outside" && "$SUT" unset >/dev/null 2>&1)
 eq "3" "$?" "unset outside a git repo exits 3"
+(cd "$outside" && "$SUT" set-assignee --account-id X >/dev/null 2>&1)
+eq "3" "$?" "set-assignee outside a git repo exits 3"
+(cd "$outside" && "$SUT" set-workflow --start X >/dev/null 2>&1)
+eq "3" "$?" "set-workflow outside a git repo exits 3"
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
