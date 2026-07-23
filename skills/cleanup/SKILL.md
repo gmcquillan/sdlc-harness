@@ -17,9 +17,11 @@ reclaims them — safely, behind a human gate.
 It never MUTATES anything beyond the local workspace —
 except a confirmed JIRA ticket transition, gated exactly like a branch deletion:
 it does not push, does not delete remote branches, does not modify any
-other remote state, and never deletes uncommitted work. It DOES make one
-read-only remote query (`gh pr list`, step 2) to learn which branches
-already have merged PRs. Create a todo per checklist item.
+other remote state, and never deletes uncommitted work. It DOES make
+read-only remote queries in step 2 — `gh pr list` to learn which branches
+already have merged PRs, plus, on the JIRA path, the `get_state`/
+`get_transitions` probes used to resolve a ticket ref and discover its
+close transition. Create a todo per checklist item.
 
 ## Checklist
 
@@ -199,9 +201,10 @@ already have merged PRs. Create a todo per checklist item.
 
 - Remote state is never mutated,
   except a confirmed JIRA ticket transition, gated exactly like a branch deletion.
-  The single `gh pr list` call is read-only; nothing is pushed and no remote
-  branch is deleted; the one JIRA transition confirmed at the step 4 gate is
-  the sole exception.
+  The `gh pr list` call and the JIRA path's `get_state`/`get_transitions`
+  probes are all read-only; nothing is pushed and no remote branch is
+  deleted; the one JIRA transition confirmed at the step 4 gate is the
+  sole exception.
 - Uncommitted work is surfaced, never removed.
 - The current branch and the base branch are never deleted.
 - A worktree with uncommitted changes is never force-removed without
