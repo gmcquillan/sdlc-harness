@@ -1,6 +1,6 @@
 ---
 name: resume
-description: Use when a session starts and the handoff-pickup hook reports .handoff-*.md files (or the user asks to resume prior SDLC work) — reads the newest handoff, verifies its recorded state against git, archives it, and re-enters the recorded phase skill.
+description: Use when a session starts and the handoff-pickup hook reports .handoff-*.md files (or the user asks to resume prior SDLC work) — reads the newest handoff, verifies its recorded state against git, re-enters the recorded phase skill, and only archives it once that work is verifiably complete.
 ---
 
 # SDLC Resume (read side)
@@ -44,16 +44,27 @@ checklist item.
    - The path is gone but the branch exists → offer to recreate it:
      `git worktree add <path> <branch>`, then operate from there.
    - `Worktree: main` or absent → operate in the main tree.
-5. **Archive the file** so stale handoffs never accumulate: move it into
-   the session scratchpad directory (or `/tmp` if none). It must leave
-   the repo root — the pickup hook keys off that glob.
-6. **Re-enter the phase:** invoke the skill named in `## Phase`
+5. **Re-enter the phase:** invoke the skill named in `## Phase`
    (sdlc:interview, sdlc:ticket, sdlc:implement, or sdlc:review), skip to
-   the recorded checklist step, and execute `## Next` in order.
+   the recorded checklist step, and execute `## Next` in order. Do not
+   touch the handoff file yet — it is the only durable record of this
+   work until it is done.
+6. **Archive the file, and only the file, once `## Next` is fully
+   executed** (or the phase's own "done" condition — PR opened/merged,
+   ticket transitioned, etc. — is met): move it into the session
+   scratchpad directory (or `/tmp` if none). It must leave the repo root
+   — the pickup hook keys off that glob. If the session ends, is
+   cleared, or is interrupted before that point, leave the file in the
+   repo root — a future session's pickup hook must still find it.
 
 ## Red flags
 
 - Starting work before step 3 → you may build on a branch that was
   rebased, deleted, or merged since the handoff was written.
-- Leaving the handoff file in the repo root → every future session gets
-  nagged about a handoff that is already done.
+- Archiving before step 5's work is verifiably complete → the scratchpad
+  directory is session-specific and not visible to future sessions; if
+  the session is interrupted between archiving and finishing, the
+  handoff is effectively lost, not just relocated.
+- Leaving the handoff file in the repo root after the work is genuinely
+  done → every future session gets nagged about a handoff that is
+  already done. Archive promptly once done, just not before.

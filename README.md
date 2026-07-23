@@ -138,7 +138,7 @@ bound, so it has no step 0 to resolve.
 | `sdlc:review <PR#>` | Fan-out review vs acceptance criteria, skeptic-verified; never merges |
 | `sdlc:fixes <PR#>` | Triage PR review comments → accept/refute gate → fix accepted via worktree + subagent TDD → reply to every thread; never resolves, never merges |
 | `sdlc:handoff` | Commit WIP + write `.handoff-<date>-<uuid>.md`; `--continue` chains a fresh-context subagent |
-| `sdlc:resume` | Verify handoff against git, archive it, re-enter the phase |
+| `sdlc:resume` | Verify handoff against git, re-enter the phase, archive once its work is done |
 | `sdlc:cleanup` | Scan worktrees/branches, report, and (on confirmation) delete stale ones; never removes uncommitted work |
 
 ## Hooks
