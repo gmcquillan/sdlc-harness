@@ -43,16 +43,19 @@ is one of them.
 
 1. **Detect mode.** Does `docs/domain/glossary.md` exist? Absent →
    **bootstrap**. Present → **update/reconcile**.
-2. **Gather candidates.**
+2. **Gather candidates** (a spec path, when given, always seeds terms —
+   in bootstrap it *is* the source; in update mode it re-seeds candidates
+   that step 2's reconciliation then folds into the existing glossary):
    - **Spec path given** (`sdlc:domain-model docs/specs/…`): the main loop
      reads that one spec file and seeds candidate terms from it.
    - **Bootstrap, no spec path** (retrofit on an existing repo): dispatch
      ONE `fable-harness:scout` subagent to surface recurring domain nouns
      from the codebase; only its candidate list returns to you. Do NOT
      read the codebase file-by-file yourself.
-   - **Update mode:** reconcile the existing entries against current
-     usage — propose terms to **add**, definitions/aliases to **change**,
-     and stale terms to **remove**.
+   - **Update mode** (glossary exists): reconcile the existing entries
+     against current usage — plus any spec-seeded candidates above —
+     proposing terms to **add**, definitions/aliases to **change**, and
+     stale terms to **remove**.
 3. **Apply the scope boundary.** Drop every candidate that is sdlc process
    vocabulary (see above) before presenting anything.
 4. **Dry-run gate.** Present the proposed entries as a table — Term |
