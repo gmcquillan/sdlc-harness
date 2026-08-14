@@ -18,7 +18,8 @@ criteria**, and **constraints**. Before proposing approaches, dispatch
 `fable-harness:integration-scan` — integrator subagents, one capability
 statement each, in a single message — so "wire, don't build" options
 surface during the interview, not after design lock-in. Keep the scan in
-subagents: their transcripts must not enter this session's context.
+subagents: their transcripts must not enter this session's context. If
+`docs/domain/glossary.md` exists, read it and bind its canonical terms.
 
 ## Override 2 — Spec must end with `## Decomposition`
 

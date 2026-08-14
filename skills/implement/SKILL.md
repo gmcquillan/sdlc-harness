@@ -36,7 +36,8 @@ per checklist item.
 4. **Understand.** Read the issue body and the spec section it links —
    main loop. Then invoke `fable-harness:systems-mapping` — scout
    subagents map the affected subsystem; only their maps return to you.
-   Do NOT read the subsystem file-by-file yourself.
+   Do NOT read the subsystem file-by-file yourself. If
+   `docs/domain/glossary.md` exists, read it and bind its canonical terms.
 5. **Isolate.** Invoke `superpowers:using-git-worktrees`; branch
    `sdlc/<ref>-<slug>` (slug = kebab-cased ticket title, ≤5 words) — so
    `sdlc/42-add-widget` or `sdlc/PROJ-123-add-widget`.
