@@ -140,6 +140,7 @@ bound, so it has no step 0 to resolve.
 | `sdlc:handoff` | Commit WIP + write `.handoff-<date>-<uuid>.md`; `--continue` chains a fresh-context subagent |
 | `sdlc:resume` | Verify handoff against git, re-enter the phase, archive once its work is done |
 | `sdlc:cleanup` | Scan worktrees/branches, report, and (on confirmation) delete stale ones; never removes uncommitted work |
+| `sdlc:domain-model [spec]` | Bootstrap/update an in-repo ubiquitous-language glossary (`docs/domain/glossary.md`); scout-seeded, dry-run gated |
 
 ## Hooks
 
