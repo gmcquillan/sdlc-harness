@@ -18,7 +18,8 @@ verdicts, and judgment. Create a todo per checklist item.
    linked ticket ref from the PR body — on GitHub the bare `<n>` of
    `Closes #<n>` — then `gh issue view <n> --json body` for the
    acceptance criteria and spec pointer. Do NOT fetch the diff into this
-   context.
+   context. If `docs/domain/glossary.md` exists, read it and bind its
+   canonical terms.
 2. **Fan out reviewers** per `fable-harness:fan-out` — three subagents,
    ALL dispatched in a single message, each given the PR number, the
    acceptance criteria, and ONE dimension:
