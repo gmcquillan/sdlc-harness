@@ -30,9 +30,14 @@ bad() { echo "FAIL: $1"; fail=$((fail+1)); }
 strip() { sed 's/^[[:space:]]*#.*//' "$1" 2>/dev/null; }
 
 # Simple checks: one BRE, any match is a violation. Emitted as "$desc|$pattern".
-# (The grep -[a-zA-Z]*P style, and its known limit -- flags split across
-# separate args like `sed -n -i` are not caught -- are inherited from #16
-# deliberately; the realistic bad form is the simple/combined one.)
+# (The grep -[a-zA-Z]*P style is inherited from #16 deliberately; the realistic
+# bad form is the simple/combined one.) Two coverage boundaries apply to every
+# short-flag pattern here and are accepted, not oversights:
+#   - split flags -- `sed -n -i`, `date -u -d` -- are not caught, only the
+#     combined `sed -ni` / `date -ud`;
+#   - long-form GNU spellings -- `sed --in-place`, `date --date`, `base64
+#     --wrap`, `stat --format`, `readlink --canonicalize` -- are not caught.
+# Both are follow-up territory (#19 scoped to the "at minimum" short forms).
 checks() {
   cat <<'EOF'
 GNU-only regex escape (\b \B \w \W \s \S)|\\[bBwWsS]
@@ -52,14 +57,17 @@ EOF
 simple_hits() { strip "$1" | grep -n -- "$2"; }
 
 # `timeout` needs a two-step check: flag it invoked as a command, but exempt the
-# tmo() shim, which guards every call with a same-line `command -v`. A non-word
-# char (or start of line) must precede `timeout` so `gtimeout` is not a match,
-# and whitespace must follow so the word `timeout` in trailing prose is not one.
-# `command -v` on the same line means capability detection -- not a bare call;
-# a multi-line guard is not recognised, so new tests should route through tmo().
+# tmo() shim, which guards every call with a same-line `command -v`. The lead-in
+# char must be neither a word char nor `$`, so `gtimeout` and a `$timeout`
+# variable reference are both excluded; whitespace must follow so the word
+# `timeout` in trailing prose (or a `timeout=5` assignment) is not a match.
+# `command -v` anywhere on the line means capability detection -- not a bare
+# call; that exemption is line-global (a stray `command -v` for an unrelated
+# reason would also exempt) and a multi-line guard is not recognised, so new
+# tests should route through the tmo() shim rather than call timeout directly.
 # grep -E for the alternation/bracket class; still no GNU-only construct.
 timeout_hits() {
-  strip "$1" | grep -nE '(^|[^[:alnum:]_])timeout[[:space:]]' | grep -v 'command -v'
+  strip "$1" | grep -nE '(^|[^[:alnum:]_$])timeout[[:space:]]' | grep -v 'command -v'
 }
 
 # Run every check against one file, emitting OK|/BAD| lines (tallied by caller).
@@ -131,6 +139,7 @@ date +%s; date +%F
 stat "$x"
 command -v timeout >/dev/null 2>&1 && timeout 5 slow-cmd
 gtimeout 5 slow-cmd
+echo "waited $timeout seconds"
 EOF
 
 # Assert each check fires on offenders and is silent on portable.
