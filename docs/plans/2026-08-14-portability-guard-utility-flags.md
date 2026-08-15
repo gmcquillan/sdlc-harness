@@ -140,6 +140,11 @@ Confirmed assertion totals (`tests/test-portability.sh`, final, verified by
 running the suite):
 - Structural floor: check-table size assertion (`checks | grep -c '|'` must be
   ≥ 10) = **1**.
+- Fixture controls (offenders.sh, oddws.sh, portable.sh each asserted present,
+  non-empty, of the expected length, and matching a probe on a known line) =
+  **3**. These make the eleven "no false positive" rows falsifiable: without
+  them a portable.sh that was never written satisfied every negative assertion
+  and the suite printed its healthy total unchanged.
 - Self-test: 10 checks × 3 (offenders line-bound, oddws line-bound, portable
   no-false-positive) + 2 for bare-timeout (offenders line-bound, portable
   no-false-positive) = **32**.
@@ -147,7 +152,15 @@ running the suite):
 - Per-directory floors (bin/, hooks/, tests/) = **3**.
 - Glob-metacharacter path regression (re-runs the script from a copy rooted at
   a bracketed directory and asserts the three floors still pass) = **1**.
-- **Total: 158** (up from 21).
+- **Total: 161** (up from 21).
+
+The six utility rows are spelled the COMBINED flag way in `offenders.sh`
+(`sed -ni`, `readlink -nf`, `base64 -iw0`, `date -ud`, `stat -Lc`, `grep -oP`)
+and the SIMPLE way in `oddws.sh` (`sed -i`, `readlink -f`, `base64 -w0`,
+`date -d`, `stat -c`, `grep -P`). The patterns are `-[a-zA-Z]*<letter>`, so
+both halves need exercising and neither fixture may gain a second line for the
+same check without breaking the line-bound assertions; splitting the two shapes
+across the two fixtures covers both while keeping the 1:1 mapping.
 
 ---
 
@@ -344,17 +357,35 @@ fx="$(mktemp -d)"
 trap 'rm -rf "$fx"' EXIT
 
 # offenders: one line per banned construct. Every check must fire here.
+#
+# The six utility rows carry the COMBINED flag form (`sed -ni`, `stat -Lc`),
+# because that is the half of the pattern nothing else exercises. Each utility
+# pattern is `-[a-zA-Z]*<letter>`, and the `[a-zA-Z]*` exists solely to reach a
+# flag letter that is clustered behind other letters. A fixture that only ever
+# spelled the SIMPLE form (`sed -i`) left that portion dead: the whole
+# `[a-zA-Z]*` could be deleted from five of the six rows and the self-test
+# stayed green while `sed -ni`, `readlink -nf`, `base64 -iw0`, `date -ud` and
+# `stat -Lc` -- all genuinely broken on BSD -- shipped unguarded. The SIMPLE
+# form is not lost: oddws.sh below spells every one of these the short way, so
+# the two fixtures cover the two shapes between them without either file
+# gaining a second line for the same check (the line-bound assertions require
+# exactly one line per check per fixture).
+#
+# Every combined cluster here is a form that really appears and really breaks:
+# BSD `sed -i` eats the next arg as a suffix; macOS has no `readlink -f`; macOS
+# `base64 -i` takes an input FILE, so `-iw0` reads a file named `w0`; BSD
+# `date -d` is the daylight-savings flag, not --date; BSD `stat` has no -c.
 cat > "$fx/offenders.sh" <<'EOF'
 grep -o '\bword\b' f
 grep '\<word\>' f
 grep '[[:<:]]word[[:>:]]' f
 grep --perl-regexp 're' f
 grep -oP 're' f
-sed -i 's/a/b/' f
-readlink -f "$x"
-base64 -w0 <in >out
-date -d @1700000000
-stat -c %s f
+sed -ni 's/x/y/p' f
+readlink -nf "$x"
+base64 -iw0 <in >out
+date -ud @1700000000
+stat -Lc %s f
 timeout 5 slow-cmd
 EOF
 
@@ -363,12 +394,18 @@ EOF
 # fixture on purpose: if these lines lived in offenders.sh the single-space
 # copies would keep each check green, and a pattern that hard-codes one literal
 # space would pass the self-test while silently missing the real thing.
+#
+# This fixture also carries the SIMPLE flag form for every utility row -- the
+# counterpart to the combined forms in offenders.sh above. Splitting the two
+# shapes across the two fixtures is what keeps both live without breaking the
+# one-line-per-check mapping; see the offenders comment for why the combined
+# half was previously untested.
 cat > "$fx/oddws.sh" <<'EOF'
 grep -o '\bword\b' f
 grep '\<word\>' f
 grep '[[:<:]]word[[:>:]]' f
 grep  --perl-regexp 're' f
-grep	-oP 're' f
+grep	-P 're' f
 sed  -i 's/a/b/' f
 readlink	-f "$x"
 base64  -w0 <in >out
@@ -387,9 +424,13 @@ EOF
 #     that matches any string merely ending in the utility name would
 #     red-flag the remedy. `ggrep --perl-regexp` covers the long-form row,
 #     which kept a bare `grep .*` lead-in after the rest were anchored.
-#   - genuinely portable flagged forms (`date -u`, `readlink -n`, `base64 -d`,
-#     `stat -L`), so a pattern that lost its flag letter and banned the
-#     utility's whole flag space could not slip through. `stat -f` and
+#   - genuinely portable flagged forms (`sed -n`, `date -u`, `readlink -n`,
+#     `base64 -d`, `stat -L`), so a pattern that lost its flag letter and
+#     banned the utility's whole flag space could not slip through. `sed -n`
+#     earns its place late: without it, broadening the sed row to
+#     `sed[[:space:]][[:space:]]*-` was caught only by one incidental
+#     `sed -n` on a real scanned file (tests/validate-skills.sh) -- rewrite
+#     that one line to awk and the mutation went fully green. `stat -f` and
 #     `date -r <epoch>` are NOT in here and must not be added: BSD `stat -f`
 #     takes a format string where GNU `-f` reports the filesystem, and BSD
 #     `date -r` accepts an epoch where GNU `-r` takes a file. Same letter,
@@ -402,6 +443,7 @@ readlink "$x"
 base64 <in >out
 date +%s; date +%F
 stat "$x"
+sed -n '1p' f
 date -u
 readlink -n "$x"
 base64 -d <in >out
@@ -434,6 +476,54 @@ EOF
 # a pattern that hits its own line *and* a sibling's.
 hit_lines() { # file pattern -> space-free list of matching line numbers
   simple_hits "$1" "$2" | cut -d: -f1 | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
+# The eleven "no false positive for ..." rows in selftest() are NEGATIVE
+# assertions: each passes when its pattern matches nothing in portable.sh. A
+# fixture that was never written -- a mangled here-doc terminator, a typo'd
+# redirect target, a bad rebase that dropped the block -- therefore satisfies
+# every one of them, and the suite prints its healthy `passed=` while those
+# eleven rows prove precisely nothing. That is not hypothetical: with
+# portable.sh absent, four of the utility patterns could be broadened to their
+# bare `date -` / `readlink -` / `base64 -` / `stat -` form and the self-test
+# still reported every assertion green. The offender fixtures are
+# self-protecting -- they drive POSITIVE assertions, which go MISSED -- but
+# only against total loss; a truncated one silently drops the checks whose
+# lines went with it.
+#
+# So each fixture gets a positive control before anything reads it: it must
+# exist and be non-empty, it must have exactly the expected number of lines,
+# and a probe must match one specific line near the end of it. A missing,
+# empty, truncated or half-written fixture now fails that control loudly
+# instead of passing quietly. The probe deliberately goes through simple_hits()
+# -- the same strip-then-grep path the real assertions use -- so a break in
+# that path fails the control too, and it is deliberately unlike any checks()
+# row so that it stays a test of the FIXTURE rather than a duplicate of the
+# assertions it protects.
+#
+# The two offender fixtures derive their expected length from nchecks: that is
+# the 1:1 fixture-line-to-check mapping every line-bound assertion depends on,
+# asserted outright instead of assumed. portable.sh carries no such mapping, so
+# its length is a literal -- bump it (and the probe's line, if the probe moves)
+# when a portable look-alike is added. `grep -c ''` counts lines rather than
+# `wc -l`, which pads its output with leading blanks on BSD.
+fixture_control() { # file label expected_lines probe expected_probe_line
+  local file=$1 label=$2 want_lines=$3 probe=$4 want_line=$5 got
+  if [ ! -s "$file" ]; then
+    bad "fixture control: $label is missing or empty -- every assertion that reads it would pass vacuously"
+    return
+  fi
+  got=$(grep -c '' "$file")
+  if [ "$got" != "$want_lines" ]; then
+    bad "fixture control: $label has $got lines, expected $want_lines -- it is truncated or has gained a line, so the line-bound assertions are reading the wrong rows"
+    return
+  fi
+  got=$(hit_lines "$file" "$probe")
+  if [ "$got" != "$want_line" ]; then
+    bad "fixture control: $label probe matched line(s) [$got], expected only line $want_line -- the fixture was not written as intended"
+    return
+  fi
+  ok "fixture control: $label present, $want_lines lines, probe matches line $want_line"
 }
 
 # Assert each check fires on its own offender line and is silent on portable.
@@ -498,6 +588,15 @@ if [ "$nchecks" -ge 10 ]; then
 else
   bad "check table shrank: expected at least 10 checks, found $nchecks"
 fi
+
+# Fixture controls run BEFORE selftest() so a broken fixture is reported as the
+# cause rather than as a wall of downstream misalignments. Both offender
+# fixtures put their probe on their own last line, so length and probe line are
+# the same number for them; portable.sh's probe is `gtimeout`, one of the
+# brew-coreutils remedy binaries the negative assertions exist to protect.
+fixture_control "$fx/offenders.sh" offenders.sh "$((nchecks + 1))" 'slow-cmd' "$((nchecks + 1))"
+fixture_control "$fx/oddws.sh"     oddws.sh     "$nchecks"         '%s'       "$nchecks"
+fixture_control "$fx/portable.sh"  portable.sh  23                 'gtimeout' 20
 
 tally <<EOF
 $(selftest)
@@ -601,9 +700,10 @@ echo "passed=$pass failed=$fail"
 - [ ] **Step 3: Run the guard against the fixed tree**
 
 Run: `bash tests/test-portability.sh; echo "exit=$?"`
-Expected: all `ok:`, `passed=158 failed=0`, `exit=0`. No `FAIL:` lines. (1
-check-table floor + 32 self-test + 121 real-sweep + 3 per-directory floors + 1
-glob-metacharacter path regression = 158; see the confirmed breakdown above.)
+Expected: all `ok:`, `passed=161 failed=0`, `exit=0`. No `FAIL:` lines. (1
+check-table floor + 3 fixture controls + 32 self-test + 121 real-sweep + 3
+per-directory floors + 1 glob-metacharacter path regression = 161; see the
+confirmed breakdown above.)
 
 - [ ] **Step 4: Prove the self-test is real (mutation check — evidence for AC-2)**
 
@@ -623,15 +723,29 @@ bash tests/test-portability.sh >/dev/null && echo "restored-green"
 
 Expected: the mutated run prints two `FAIL:` lines naming
 `guard MISSED sed -i, BSD needs a mandatory suffix arg` (one for the offenders
-fixture, one for the oddws tab/double-space fixture) and `passed=156 failed=2`;
+fixture, one for the oddws tab/double-space fixture) and `passed=159 failed=2`;
 the restore run is green again (`restored-green`). Record this output in the
 PR as the go-red evidence, mirroring #16's `passed=9 failed=2`.
+
+Two further mutations are worth recording, because each covers a hole the
+suite could not previously see:
+- Narrow the `[a-zA-Z]*` out of the five utility patterns (`-[a-zA-Z]*i` →
+  `-i`, and so on). Expected: five `guard MISSED ... in the offenders fixture`
+  lines and `passed=156 failed=5`. Before the combined/simple fixture split
+  this mutation left the suite at a full green `passed=158 failed=0` while
+  `sed -ni`, `readlink -nf`, `base64 -iw0`, `date -ud` and `stat -Lc` all
+  shipped unguarded.
+- Delete or empty the `portable.sh` fixture (typo the redirect target).
+  Expected: `FAIL: fixture control: portable.sh is missing or empty` and
+  `passed=160 failed=1`. Before the fixture controls this left the suite
+  byte-identical to a healthy run, with all eleven negative assertions passing
+  vacuously.
 
 The glob-metacharacter regression has its own mutation, and it must be run on a
 COPY of the tree rather than in place — drop the quotes back out of the prefix
 strip (`rel="${f#"$root"/}"` → `rel="${f#$root/}"`) and re-run. Expected:
 `FAIL: per-directory floors broke under a repo path containing glob
-metacharacters (nothing counted for: bin hooks tests)` and `passed=157
+metacharacters (nothing counted for: bin hooks tests)` and `passed=160
 failed=1`. That failure appears even though the repo itself sits at a
 metacharacter-free path, which is the point of the assertion: it re-runs the
 script from a copy rooted at `w[1]` inside the temp fixture dir, so the bug is
@@ -654,7 +768,7 @@ done
 ```
 Expected: every line `passed=N failed=0`, with these totals —
 `test-cleanup-skill` 13, `test-context-tripwire` 8, `test-handoff-pickup` 9,
-`test-handoff-worktree` 2, `test-lint-before-push` 24, `test-portability` 158,
+`test-handoff-worktree` 2, `test-lint-before-push` 24, `test-portability` 161,
 `test-sdlc-backend` 140, `validate-skills` 24. Every total except
 `test-portability` is unchanged from Baseline.
 
