@@ -31,7 +31,7 @@ diff --git a/src/app.js b/src/app.js
 index 1111111..2222222 100644
 --- a/src/app.js
 +++ b/src/app.js
-@@ -1,3 +1,5 @@
+@@ -1,2 +1,4 @@
  const x = 1;
 +const gadgetCount = 0;
 +const Gadget = makeGadget();
@@ -50,7 +50,7 @@ diff --git a/src/app.js b/src/app.js
 index 1111111..2222222 100644
 --- a/src/app.js
 +++ b/src/app.js
-@@ -1,3 +1,4 @@
+@@ -1,2 +1,3 @@
  const x = 1;
 +const Widget = makeWidget();
  const y = 2;
@@ -125,7 +125,7 @@ eq "src/app.js:2 — 'Gadget' found — should be 'Widget'" "$got" \
    "CRLF-authored glossary still reports the violation (no silent false negative)"
 
 # --- an ADDED line whose content starts with "++ " must not be mistaken --
-# --- for a "+++ " file header (only real when it follows a "--- " line) --
+# --- for a "+++ " file header (headers only occur BETWEEN hunks) --------
 plusplus="$tmp/plusplus.diff"
 cat >"$plusplus" <<'PLUSPLUS'
 --- a/doc.md
@@ -139,6 +139,30 @@ PLUSPLUS
 got=$(bash "$SUT" check --glossary "$glossary" <"$plusplus")
 eq "doc.md:3 — 'Gadget' found — should be 'Widget'" "$got" \
    "an added line starting with '++ ' is not mistaken for a +++ file header"
+
+# --- the same, but the "++ " line directly follows a REMOVED line whose --
+# --- content starts with "-- " (rendering as "--- "). The pair looks     --
+# --- exactly like a file header, so nothing but the hunk's line budget   --
+# --- can tell them apart. Two added lines carry the alias: the first     --
+# --- proves the "+++ " line itself is still checked, the second proves   --
+# --- path and line counter are not corrupted for the rest of the hunk.   --
+sqlpair="$tmp/sqlpair.diff"
+cat >"$sqlpair" <<'SQLPAIR'
+--- a/q.sql
++++ b/q.sql
+@@ -1,2 +1,3 @@
+ SELECT 1;
+--- legacy note
++++ new Gadget marker
++another Gadget here
+SQLPAIR
+
+got=$(bash "$SUT" check --glossary "$glossary" <"$sqlpair")
+want=$(printf '%s\n%s' \
+  "q.sql:2 — 'Gadget' found — should be 'Widget'" \
+  "q.sql:3 — 'Gadget' found — should be 'Widget'")
+eq "$want" "$got" \
+   "a '-- '/'++ ' content pair inside a hunk is not mistaken for a file header"
 
 # --- "\ No newline at end of file" is diff metadata, not a content line --
 # --- (the old file lacked a trailing newline, so the marker sits between
@@ -217,6 +241,23 @@ MULTIHUNK
 got=$(bash "$SUT" check --glossary "$glossary" <"$multihunk")
 eq "src/multi.js:12 — 'Gadget' found — should be 'Widget'" "$got" \
    "a multi-hunk diff reports the correct line number in the second hunk"
+
+# --- an unreadable glossary is exit 3, never a silent clean result -------
+# An ABSENT glossary is exit 0 and silence (the project opted out); a
+# PRESENT but unreadable one is a real failure, and must not be reported
+# as "no drift" -- silence is this tool's only clean signal, so a failure
+# that stays silent is indistinguishable from a pass.
+unreadable="$tmp/unreadable.md"
+cp "$glossary" "$unreadable"
+chmod 000 "$unreadable"
+if [ -r "$unreadable" ]; then
+  # root ignores the mode bits, so the branch cannot be exercised here
+  echo "skip: unreadable glossary is exit 3 (running as root)"
+else
+  bash "$SUT" check --glossary "$unreadable" >/dev/null 2>&1 <"$dirty"
+  eq "3" "$?" "an unreadable glossary is exit 3"
+fi
+chmod 644 "$unreadable"
 
 # --- usage errors are exit 2 --------------------------------------------
 bash "$SUT" >/dev/null 2>&1; eq "2" "$?" "no subcommand is a usage error"

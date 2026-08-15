@@ -41,8 +41,17 @@ verdicts, and judgment. Create a todo per checklist item.
    check is pure string matching:
 
    ```bash
-   gh pr diff <PR#> | bin/sdlc-drift.sh check
+   set -o pipefail
+   gh pr diff <PR#> | sdlc-drift.sh check
+   echo "drift-check exit=$?"
    ```
+
+   Call the helper by **bare name**, exactly as with `sdlc-backend.sh`:
+   the plugin's `bin/` is prepended to `PATH`, so the bare name resolves
+   to the plugin's own copy from any working directory. `bin/sdlc-drift.sh`
+   would resolve against the *user's* repo — where the script does not
+   exist — and `"${CLAUDE_PLUGIN_ROOT}/bin/…"` expands to the empty string
+   in the Bash tool environment.
 
    The diff stays inside the pipe; only violation lines
    (`file:line — 'alias' found — should be 'canonical'`) come back. Fold
@@ -50,6 +59,14 @@ verdicts, and judgment. Create a todo per checklist item.
    heading. These are **non-blocking**: they never by themselves turn an
    approval into `--request-changes`, and a PR whose only findings are
    drift hits is still approved.
+
+   **Silence is only a clean result at `exit=0`.** No output is exactly
+   what a clean PR produces *and* what a helper that never ran produces —
+   `pipefail` plus the echoed status is what separates them (`127` = not
+   on `PATH`, non-zero from `gh` = the diff was never fetched, `3` =
+   glossary unreadable). On any non-zero status, report "naming-drift
+   check unavailable: `<status>`" in the review body. Never record it as
+   "no naming drift found".
 5. **Post the verdict** — comment or approve, NEVER merge:
 
    ```bash

@@ -45,7 +45,18 @@ cmd_check() {
       gsub(/[][(){}.*+?^$|]/, "\\\\&", t)
       return t
     }
-    BEGIN { path = "(unknown)"; ln = 0; na = 0; term = ""; pending = 0; skip = 0 }
+    # A hunk header'\''s range is "<start>[,<count>]"; an omitted count is 1.
+    function rstart(r,   p) { p = index(r, ","); return (p ? substr(r, 1, p - 1) : r) + 0 }
+    function rcount(r,   p) { p = index(r, ","); return (p ? substr(r, p + 1) + 0 : 1) }
+
+    # True while the current hunk still owes body lines. Header patterns
+    # are only honoured when this is false -- see pass 2.
+    function inhunk() { return (rem_old > 0 || rem_new > 0) }
+
+    BEGIN {
+      path = "(unknown)"; ln = 0; na = 0; term = ""; skip = 0
+      rem_old = 0; rem_new = 0
+    }
 
     # ---- pass 1: the glossary ------------------------------------------
     # FILENAME != "-" excludes stdin (the diff) from pass 1. With an empty
@@ -80,17 +91,43 @@ cmd_check() {
     }
 
     # ---- pass 2: the diff ----------------------------------------------
-    # A "--- " header is only real when immediately followed by a "+++ "
-    # header, so "--- " just arms a one-line pending flag rather than
-    # acting itself. Eating a "--- " line that was really a removed line
-    # is harmless -- removed lines never advance the line counter. Every
-    # other rule below clears the flag, so an ADDED line whose content
-    # happens to start with "++ " (rendering as "+++ ..." in the diff) is
-    # never mistaken for a file header: pending is false by the time it is
-    # seen, so it falls through to the ordinary added-line rule instead.
-    /^--- / { pending = 1; next }
+    # Inside a hunk every body line carries a one-character prefix, so a
+    # line of file content beginning with "-- " or "++ " renders exactly
+    # like a "--- "/"+++ " file header and no pattern can tell them apart.
+    # File headers only ever occur BETWEEN hunks, though, and the hunk
+    # header states precisely how many old and new lines the body holds --
+    # so track that budget and honour header patterns only once it is
+    # spent. Content is then structurally incapable of being read as a
+    # header, which matters beyond the one line: a misread header silently
+    # rewrites "path" and stalls the line counter for the whole hunk.
 
-    /^\+\+\+ / && pending {
+    # Unconditional, so a diff with counts that disagree with its own body
+    # (hand-written fixtures, plan-doc excerpts) re-syncs at the next hunk
+    # rather than staying wedged. Body lines are prefixed, so a real line
+    # of content can never reach this pattern at column 0.
+    /^@@ -[0-9]/ {
+      hdr = $0
+      # Drop the trailing section heading -- it is arbitrary source text
+      # and may hold its own "+12"-shaped runs (awk'\''s match() is greedy
+      # left-to-right, so an unbounded search could pick one up).
+      i = index(substr(hdr, 3), "@@")
+      if (i > 0) hdr = substr(hdr, 1, i + 1)
+      rem_old = 1; rem_new = 1
+      if (match(hdr, /-[0-9]+(,[0-9]+)?/)) {
+        rem_old = rcount(substr(hdr, RSTART + 1, RLENGTH - 1))
+      }
+      if (match(hdr, /\+[0-9]+(,[0-9]+)?/)) {
+        r = substr(hdr, RSTART + 1, RLENGTH - 1)
+        ln = rstart(r); rem_new = rcount(r)
+      }
+      next
+    }
+
+    # Eating a "--- " line costs nothing: it is either a header or a
+    # removed line, and removed lines never advance the line counter.
+    !inhunk() && /^--- / { next }
+
+    !inhunk() && /^\+\+\+ / {
       path = substr($0, 5)
       sub(/\t.*$/, "", path)
       if (path ~ /^b\//) path = substr(path, 3)
@@ -100,22 +137,19 @@ cmd_check() {
       # fixture path works too) and the canonical repo path, so a real
       # PR diff is covered even when --glossary points elsewhere.
       skip = (path == glossary_path || path == "docs/domain/glossary.md")
-      pending = 0
       next
     }
 
-    /^@@/ {
-      pending = 0
-      if (match($0, /\+[0-9]+/)) ln = substr($0, RSTART + 1, RLENGTH - 1) + 0
-      next
-    }
+    # Between hunks: "diff --git", "index", mode and rename lines. None of
+    # them are file content, so none may touch the line counter.
+    !inhunk() { next }
 
+    # ---- hunk body ------------------------------------------------------
     # "\ No newline at end of file" is diff metadata, not a line of file
-    # content; skip it so it never advances the line counter.
-    /^\\/ { pending = 0; next }
+    # content: it neither advances the line counter nor spends budget.
+    /^\\/ { next }
 
     /^\+/ {
-      pending = 0
       text = substr($0, 2)
       if (!skip) {
         for (i = 1; i <= na; i++) {
@@ -125,11 +159,11 @@ cmd_check() {
           }
         }
       }
-      ln++
+      ln++; rem_new--
       next
     }
-    /^-/ { pending = 0; next }
-    { pending = 0; ln++ }
+    /^-/ { rem_old--; next }
+    { ln++; rem_old--; rem_new-- }
   ' "$glossary" -
 }
 
