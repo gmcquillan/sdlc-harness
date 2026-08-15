@@ -35,7 +35,38 @@ verdicts, and judgment. Create a todo per checklist item.
    single message) that tries to REFUTE it against the actual code.
    Refuted findings are dropped. No plausible-but-wrong comments reach
    the PR.
-4. **Post the verdict** — comment or approve, NEVER merge:
+4. **Naming drift (deterministic, advisory).** Skip entirely unless
+   `docs/domain/glossary.md` exists. When it does, the main loop runs the
+   helper directly — no reviewer subagent, no skeptic round, because the
+   check is pure string matching:
+
+   ```bash
+   set -o pipefail
+   gh pr diff <PR#> | sdlc-drift.sh check
+   echo "drift-check exit=$?"
+   ```
+
+   Call the helper by **bare name**, exactly as with `sdlc-backend.sh`,
+   never with a directory prefix of any kind: the plugin's `bin/` is
+   prepended to `PATH`, so the bare name resolves to the plugin's own copy
+   from any working directory, while every prefixed form resolves
+   somewhere the script is not. `references/backend-bind.md` explains why.
+
+   The diff stays inside the pipe; only violation lines
+   (`file:line — 'alias' found — should be 'canonical'`) come back. Fold
+   any hits into the review body under a **Naming drift (advisory)**
+   heading. These are **non-blocking**: they never by themselves turn an
+   approval into `--request-changes`, and a PR whose only findings are
+   drift hits is still approved.
+
+   **Silence is only a clean result at `exit=0`.** No output is exactly
+   what a clean PR produces *and* what a helper that never ran produces —
+   `pipefail` plus the echoed status is what separates them (`127` = not
+   on `PATH`, non-zero from `gh` = the diff was never fetched, `3` =
+   glossary unreadable). On any non-zero status, report "naming-drift
+   check unavailable: `<status>`" in the review body. Never record it as
+   "no naming drift found".
+5. **Post the verdict** — comment or approve, NEVER merge:
 
    ```bash
    # criteria unmet or confirmed findings:
@@ -46,9 +77,12 @@ verdicts, and judgment. Create a todo per checklist item.
    <one line of evidence per criterion>"
    ```
 
+   Naming-drift hits are advisory: list them in the body, but never let
+   them alone select `--request-changes`.
+
    Approval ends with: "Ready for your merge decision." The merge is
    always the human's.
-5. **Address findings (ONLY if the user asked you to fix, not just
+6. **Address findings (ONLY if the user asked you to fix, not just
    review).** Triage → gate → act. Every fix runs in a sub-agent; the main
    loop never edits files itself, no matter how small the change.
 
@@ -120,3 +154,6 @@ verdicts, and judgment. Create a todo per checklist item.
   is required, exactly like sdlc:ticket's dry-run.
 - Patching a branch whose approach is wrong (Tier C) instead of
   recommending a fresh sdlc:implement → you are polishing a rewrite.
+- Running the drift check with no glossary present, or letting a drift
+  hit block approval → the check is advisory and the default path must
+  stay free.

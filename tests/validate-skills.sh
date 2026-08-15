@@ -99,5 +99,35 @@ else
   bad "cleanup: missing the JIRA-transition carve-out to its remote-state invariant"
 fi
 
+# --- helper scripts are invoked by bare name, never by path -------------
+# The plugin's bin/ is prepended to PATH, so `sdlc-backend.sh` resolves to
+# the plugin's own copy from any working directory. A `bin/` prefix instead
+# resolves against the USER's repo, where the script does not exist, and
+# "${CLAUDE_PLUGIN_ROOT}" is empty in the Bash tool environment, leaving
+# "/bin/...". Both fail the same silent way -- command not found, the step
+# prints nothing, and for a tool whose clean result IS no output that is
+# indistinguishable from success. That is how the bug shipped twice
+# (skills/review, skills/cleanup), so it gets a test rather than a third
+# round of review.
+#
+# Zero tolerance, including inside prose: the cleanup instance was inline
+# backticks in a sentence, not a fenced command, so a fence-only rule would
+# have missed the very bug it is meant to catch. A skill needing to discuss
+# the broken form points at references/backend-{jira,bind}.md, which hold
+# the canonical explanation and are deliberately out of scope here so they
+# stay free to quote it verbatim.
+# To reproduce:
+#   grep -nE 'bin/sdlc-[a-z-]*\.sh|CLAUDE_PLUGIN_ROOT' skills/*/SKILL.md
+for f in "$root"/skills/*/SKILL.md; do
+  [ -f "$f" ] || continue
+  name=$(basename "$(dirname "$f")")
+  hits=$(grep -nE 'bin/sdlc-[a-z-]*\.sh|CLAUDE_PLUGIN_ROOT' "$f")
+  if [ -n "$hits" ]; then
+    bad "$name: helper referenced by path, not bare name — $(printf '%s' "$hits" | tr '\n' ';')"
+  else
+    ok "$name: helper scripts referenced by bare name"
+  fi
+done
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

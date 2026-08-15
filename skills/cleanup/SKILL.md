@@ -127,9 +127,10 @@ close transition. Create a todo per checklist item.
      - Always exclude: the current branch, the base branch, and any
        branch checked out in a worktree that is not itself being removed.
    - **JIRA ticket status for branches classified PR merged.** Only when
-     `bin/sdlc-backend.sh resolve` (run once for this whole step, not once
-     per branch) reports `action: use-jira`; on any other action, skip this
-     sub-step entirely — there is no JIRA ticket to resolve.
+     `sdlc-backend.sh resolve` (bare name, as everywhere else — run once
+     for this whole step, not once per branch) reports `action: use-jira`;
+     on any other action, skip this sub-step entirely — there is no JIRA
+     ticket to resolve.
 
      For each branch classified **PR merged** above, parse `<ref>` from
      `sdlc/<ref>-<slug>`. If `<ref>` is not a bare integer (a JIRA key,
