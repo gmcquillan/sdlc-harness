@@ -403,7 +403,9 @@ git commit -m "feat: advisory naming-drift step in review"
 | `skills/review/SKILL.md` gains a deterministic step, main loop, no subagent, no skeptic, advisory | Task 2 Steps 1–3 |
 | With no glossary, `review` behaves byte-for-byte as today | Task 1 Step 3 (`[ -f "$glossary" ] || return 0`); asserted by the absent-glossary case; Task 2 Step 1 ("Skip entirely unless ... exists") |
 
-**2. Placeholder scan** — no TBD/TODO/"similar to Task N"; every code step carries literal content.
+**2. Placeholder scan** — clean. No deferral markers, no "same as the
+earlier task" cross-references, no vague directives standing in for code:
+every step that calls for code carries that code literally.
 
 **3. Type consistency** — the invocation `bin/sdlc-drift.sh check` and the
 output shape `file:line — 'alias' found — should be 'canonical'` are
