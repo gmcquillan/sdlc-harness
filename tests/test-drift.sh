@@ -105,6 +105,25 @@ got=$(bash "$SUT" check --glossary "$tmp/does-not-exist.md" <"$dirty"); rc=$?
 eq "0" "$rc" "absent glossary exits 0"
 eq "" "$got" "absent glossary reports nothing"
 
+# --- a CRLF-authored glossary must not silently miss the alias ----------
+# Built portably with printf (no sed -i / GNU-only flags): each glossary
+# line ends in a literal CR before the shell-added LF.
+crlf="$tmp/crlf-glossary.md"
+printf '### Widget\r\nThe unit of work.\r\n**Not:** Gadget\r\n' >"$crlf"
+
+crlfdiff="$tmp/crlf.diff"
+cat >"$crlfdiff" <<'CRLFDIFF'
+--- a/src/app.js
++++ b/src/app.js
+@@ -1,1 +1,2 @@
+ const x = 1;
++const Gadget = old();
+CRLFDIFF
+
+got=$(bash "$SUT" check --glossary "$crlf" <"$crlfdiff")
+eq "src/app.js:2 — 'Gadget' found — should be 'Widget'" "$got" \
+   "CRLF-authored glossary still reports the violation (no silent false negative)"
+
 # --- usage errors are exit 2 --------------------------------------------
 bash "$SUT" >/dev/null 2>&1; eq "2" "$?" "no subcommand is a usage error"
 bash "$SUT" bogus >/dev/null 2>&1; eq "2" "$?" "unknown subcommand is a usage error"

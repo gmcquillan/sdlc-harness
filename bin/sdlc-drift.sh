@@ -49,6 +49,13 @@ cmd_check() {
     # so diff text would be parsed as glossary entries; guarding on the
     # real glossary filename keeps pass 1 scoped to the glossary only.
     FNR == NR && FILENAME != "-" {
+      # Strip a trailing CR once here so every field derived below (the
+      # heading term and each alias) is CR-clean, rather than trimming CR
+      # at each sub() site. A CRLF-authored glossary would otherwise parse
+      # aliases like "Gadget\r", which never matches clean diff text -- a
+      # silent false negative from an advisory tool whose only signal is
+      # its own silence.
+      sub(/\r$/, "", $0)
       if ($0 ~ /^### /) {
         term = substr($0, 5)
         sub(/[ \t]+$/, "", term)
