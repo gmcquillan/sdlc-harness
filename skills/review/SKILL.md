@@ -46,12 +46,11 @@ verdicts, and judgment. Create a todo per checklist item.
    echo "drift-check exit=$?"
    ```
 
-   Call the helper by **bare name**, exactly as with `sdlc-backend.sh`:
-   the plugin's `bin/` is prepended to `PATH`, so the bare name resolves
-   to the plugin's own copy from any working directory. `bin/sdlc-drift.sh`
-   would resolve against the *user's* repo — where the script does not
-   exist — and `"${CLAUDE_PLUGIN_ROOT}/bin/…"` expands to the empty string
-   in the Bash tool environment.
+   Call the helper by **bare name**, exactly as with `sdlc-backend.sh`,
+   never with a directory prefix of any kind: the plugin's `bin/` is
+   prepended to `PATH`, so the bare name resolves to the plugin's own copy
+   from any working directory, while every prefixed form resolves
+   somewhere the script is not. `references/backend-bind.md` explains why.
 
    The diff stays inside the pipe; only violation lines
    (`file:line — 'alias' found — should be 'canonical'`) come back. Fold
