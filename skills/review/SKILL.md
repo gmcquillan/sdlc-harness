@@ -35,7 +35,22 @@ verdicts, and judgment. Create a todo per checklist item.
    single message) that tries to REFUTE it against the actual code.
    Refuted findings are dropped. No plausible-but-wrong comments reach
    the PR.
-4. **Post the verdict** — comment or approve, NEVER merge:
+4. **Naming drift (deterministic, advisory).** Skip entirely unless
+   `docs/domain/glossary.md` exists. When it does, the main loop runs the
+   helper directly — no reviewer subagent, no skeptic round, because the
+   check is pure string matching:
+
+   ```bash
+   gh pr diff <PR#> | bin/sdlc-drift.sh check
+   ```
+
+   The diff stays inside the pipe; only violation lines
+   (`file:line — 'alias' found — should be 'canonical'`) come back. Fold
+   any hits into the review body under a **Naming drift (advisory)**
+   heading. These are **non-blocking**: they never by themselves turn an
+   approval into `--request-changes`, and a PR whose only findings are
+   drift hits is still approved.
+5. **Post the verdict** — comment or approve, NEVER merge:
 
    ```bash
    # criteria unmet or confirmed findings:
@@ -46,9 +61,12 @@ verdicts, and judgment. Create a todo per checklist item.
    <one line of evidence per criterion>"
    ```
 
+   Naming-drift hits are advisory: list them in the body, but never let
+   them alone select `--request-changes`.
+
    Approval ends with: "Ready for your merge decision." The merge is
    always the human's.
-5. **Address findings (ONLY if the user asked you to fix, not just
+6. **Address findings (ONLY if the user asked you to fix, not just
    review).** Triage → gate → act. Every fix runs in a sub-agent; the main
    loop never edits files itself, no matter how small the change.
 
@@ -120,3 +138,6 @@ verdicts, and judgment. Create a todo per checklist item.
   is required, exactly like sdlc:ticket's dry-run.
 - Patching a branch whose approach is wrong (Tier C) instead of
   recommending a fresh sdlc:implement → you are polishing a rewrite.
+- Running the drift check with no glossary present, or letting a drift
+  hit block approval → the check is advisory and the default path must
+  stay free.
