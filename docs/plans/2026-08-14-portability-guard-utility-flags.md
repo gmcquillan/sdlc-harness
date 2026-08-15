@@ -22,8 +22,13 @@ under the README loop (`README.md:158`, `for t in tests/test-*.sh tests/validate
 - Target platform floor: **stock macOS** (BSD userland) as well as GNU/Linux.
 - **Scope:** only `tests/test-portability.sh` changes. No shipped script under
   `bin/`/`hooks/` is expected to change (per #19 Scope).
-- The scanner is itself portable: patterns are plain BRE (or ERE via `grep -E`
-  for the two-step `timeout` check), no GNU-only construct, no `\b`.
+- The scanner is itself portable: every pattern is matched with `grep -E`
+  (POSIX ERE), no GNU-only construct, no `\b`, no `grep -P`. ERE is not a
+  stylistic choice — the `(^|[^[:alnum:]_-])` lead-in each utility pattern
+  gained in `b0061d8` is an alternation, and BRE can only spell that as `\|`,
+  a GNU extension this very guard bans. `simple_hits()` and `timeout_hits()`
+  both use `-E`; the three regex-escape patterns are unaffected by the switch
+  (`\\`, `\[`, `\]` and bracket expressions mean the same in BRE and ERE).
 - Whole-line-comment stripping (`sed 's/^[[:space:]]*#.*//'`) is preserved so a
   file may still explain a rejected construct in a comment (the AC-5 convention
   #16 established).
@@ -66,10 +71,21 @@ the rest of the scanner, and its intent is simply: **new tests should route
 through the `tmo()` shim rather than call `timeout` bare.** A multi-line
 `command -v` guard is not recognized; the comment says so.
 
-**Pattern style → combined-flag BRE, mirroring #16.** `sed -[a-zA-Z]*i`,
-`readlink -[a-zA-Z]*f`, etc., matching the existing `grep -[a-zA-Z]*P` style.
-Known, accepted limitation (shared with #16): flags split across separate args
-(`sed -n -i`) are not caught; the realistic bad form is the simple/combined one.
+**Pattern style → combined-flag ERE, mirroring #16's `-[a-zA-Z]*` shape.** The
+shipped patterns are
+`(^|[^[:alnum:]_-])sed[[:space:]][[:space:]]*-[a-zA-Z]*i`,
+`(^|[^[:alnum:]_-])readlink[[:space:]][[:space:]]*-[a-zA-Z]*f`, etc. — the
+combined-flag `-[a-zA-Z]*` idiom is carried over from #16's
+`grep -[a-zA-Z]*P`, but each pattern is anchored on the left by the
+`(^|[^[:alnum:]_-])` lead-in and allows a tab or a run of spaces before the
+flag. The original draft of this step used bare BRE (`sed -[a-zA-Z]*i`); the
+lead-in landed in `b0061d8`, and because it is an alternation the matcher moved
+from BRE to `grep -E` at the same time (BRE spells alternation `\|`, which is
+GNU-only and banned here). Known, accepted limitations (shared with #16): flags
+split across separate args (`sed -n -i`) are not caught, long-form GNU
+spellings (`sed --in-place`) are not caught, and the lead-in exempts any
+wrapper whose name ends in the utility name (`gsed` — the intended remedy — but
+also `egrep`/`zgrep`). All are recorded in the file's header comment.
 Verified zero false positives against the current tree (see Baseline).
 
 **Pattern scope → the six AC-required constructs only.** `sed -i`,
@@ -95,7 +111,11 @@ tests/validate-skills.sh: passed=24 failed=0
 ```
 
 Empirical false-positive checks already run against the comment-stripped tree
-(these MUST stay clean; they are the AC-5 evidence):
+(these MUST stay clean; they are the AC-5 evidence). The pattern text quoted
+below is the **pre-anchor** form these were run with: the shipped patterns
+later gained the `(^|[^[:alnum:]_-])` lead-in and the
+`[[:space:]][[:space:]]*` flag gap (`b0061d8`), which only narrows what
+matches — so a result of "zero hits" still holds for the shipped forms:
 
 - `sed -[a-zA-Z]*i`, `readlink -[a-zA-Z]*f`, `base64 -[a-zA-Z]*w`,
   `date -[a-zA-Z]*d`, `stat -[a-zA-Z]*c` → **zero hits** across `bin/`,
@@ -125,7 +145,9 @@ running the suite):
   no-false-positive) = **32**.
 - Real sweep: 11 files × 11 checks (10 simple + bare-timeout) = **121**.
 - Per-directory floors (bin/, hooks/, tests/) = **3**.
-- **Total: 157** (up from 21).
+- Glob-metacharacter path regression (re-runs the script from a copy rooted at
+  a bracketed directory and asserts the three floors still pass) = **1**.
+- **Total: 158** (up from 21).
 
 ---
 
@@ -170,11 +192,11 @@ utility-flag patterns appended to the check table; (c) the sweep now includes
 `tests/*.sh` and skips `test-portability.sh` itself; (d) a self-test that proves
 every check red on an offenders fixture and green on a portable fixture.
 
-This is the version shipped after the review-fix rounds (`b0061d8`,
-`8637a9d`) — the two commits that landed since the original Step 2 draft are
-folded in directly below rather than shown as a separate diff, so this sample
-never drifts from `tests/test-portability.sh` again as long as it's kept in
-sync on future edits:
+This is the version shipped after the review-fix rounds (`b0061d8`, `8637a9d`,
+and the round that added the glob-metacharacter path regression) — the commits
+that landed since the original Step 2 draft are folded in directly below rather
+than shown as a separate diff, so this sample never drifts from
+`tests/test-portability.sh` again as long as it's kept in sync on future edits:
 
 ```bash
 #!/usr/bin/env bash
@@ -216,22 +238,29 @@ strip() { sed 's/^[[:space:]]*#.*//' "$1" 2>/dev/null; }
 # any string that merely ends in its name. That deliberately exempts the
 # brew-coreutils `g*` binaries (`gsed -i`, `gdate -d`, ...): those are the
 # portable *remedy* on a Mac, not the defect, and flagging them would punish
-# the fix. `-` is inside the excluded class, so a long option ending in the
-# utility name (`apt update -does`) is likewise not a match. Two coverage
-# boundaries remain and are accepted, not oversights:
+# the fix. `-` is inside the excluded class too, so a long option ending in the
+# utility name (`apt update -does`) is not a match -- and neither is a
+# hyphenated wrapper (`my-sed -i`, `update-date -d`). That is judged negligible
+# in practice and it buys a genuine false-positive fix: `pgrep -P 1` is
+# portable and no longer trips the `grep -P` row. Two coverage boundaries
+# remain and are accepted, not oversights:
 #   - split flags -- `sed -n -i`, `date -u -d` -- are not caught, only the
 #     combined `sed -ni` / `date -ud`;
 #   - long-form GNU spellings -- `sed --in-place`, `date --date`, `base64
 #     --wrap`, `stat --format`, `readlink --canonicalize` -- are not caught;
-#   - `zgrep -P` / `xzgrep -P` were caught before the lead-in and are not any
-#     more: the `g`/`p` before `grep` is an alnum, so the class rejects them
-#     exactly as it rejects `ggrep`. This is inherent, not an oversight -- one
-#     character class cannot both exempt `gsed`/`ggrep` (the portable remedy)
-#     and catch `zgrep` (a real defect), because the two are indistinguishable
-#     one character to the left. The trade is judged worth it: `grep -P` on a
-#     plain file is the realistic bad form, and it is still caught.
+#   - ANY wrapper whose name merely ENDS IN a guarded utility name is now
+#     exempt, not just the `g*` remedy binaries. For `grep -P` that means every
+#     compression wrapper and the common `egrep` spelling -- `egrep -P`,
+#     `zgrep -P`, `bzgrep -P`, `lzgrep -P`, `xzgrep -P` (verified: none match)
+#     -- and the same holds for the other rows. They were caught before the
+#     lead-in and are not any more. This is inherent, not an oversight: one
+#     character class cannot both exempt `ggrep` (the portable remedy) and
+#     catch `egrep`/`zgrep` (real defects), because the two are
+#     indistinguishable one character to the left. The trade is judged worth
+#     it: `grep -P` on a plain file is the realistic bad form, and it is still
+#     caught.
 # All three are follow-up territory (#19 scoped to the "at minimum" short
-# forms); the zgrep case needs an explicit utility list, not a wider class.
+# forms); the wrapper case needs an explicit utility list, not a wider class.
 # Whitespace between utility and flag is NOT a gap: [[:space:]][[:space:]]*
 # covers a tab or any run of spaces, and the oddws fixture below asserts it.
 checks() {
@@ -391,8 +420,9 @@ echo "waited $timeout seconds"
 EOF
 
 # Both offender fixtures are laid out one line per check, in checks() order:
-# fixture line N is the construct for check N (offenders.sh has an extra
-# line 11 for the bare-timeout check, which is asserted separately below).
+# fixture line N is the construct for check N (offenders.sh carries one extra
+# trailing line, nchecks+1, for the bare-timeout check, asserted separately
+# below -- that assertion derives its line number rather than spelling it out).
 # Assertions are bound to that line number, not merely to "matched somewhere":
 # an unbound assertion passes when a pattern cross-matches a *sibling's*
 # fixture line, which is exactly what an ordinary copy-paste row misalignment
@@ -408,7 +438,7 @@ hit_lines() { # file pattern -> space-free list of matching line numbers
 
 # Assert each check fires on its own offender line and is silent on portable.
 selftest() {
-  local desc pat n got
+  local desc pat n got tline
   n=0
   checks | while IFS='|' read -r desc pat; do
     n=$((n+1))
@@ -432,15 +462,20 @@ selftest() {
       && echo "OK|self-test: no false positive for $desc" \
       || echo "BAD|self-test: false positive for $desc on portable code"
   done
-  # Same line-binding for the bare-timeout check: its construct is the last
-  # line of offenders.sh, and nothing else in that fixture may satisfy it.
+  # Same line-binding for the bare-timeout check: its construct is the line
+  # straight after the per-check rows, so derive it from the table size instead
+  # of hard-coding it. A literal here is a fifth thing to update in lockstep
+  # when a check is added -- checks(), both fixtures, the table floor, and this
+  # -- and the one that gets forgotten reports a *timeout* misalignment, which
+  # points at the wrong row entirely.
+  tline=$((nchecks + 1))
   got=$(timeout_hits "$fx/offenders.sh" | cut -d: -f1 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
-  if [ "$got" = "11" ]; then
-    echo "OK|self-test: guard catches bare timeout on offenders line 11"
+  if [ "$got" = "$tline" ]; then
+    echo "OK|self-test: guard catches bare timeout on offenders line $tline"
   elif [ -z "$got" ]; then
     echo "BAD|self-test: guard MISSED bare timeout in the offenders fixture"
   else
-    echo "BAD|self-test: bare timeout matched offenders line(s) [$got], expected only line 11"
+    echo "BAD|self-test: bare timeout matched offenders line(s) [$got], expected only line $tline"
   fi
   [ -z "$(timeout_hits "$fx/portable.sh")" ] \
     && echo "OK|self-test: no false positive for bare timeout (tmo/gtimeout)" \
@@ -481,7 +516,10 @@ for f in "$root"/bin/*.sh "$root"/hooks/*.sh "$root"/tests/*.sh; do
   [ -f "$f" ] || continue
   case "$f" in */test-portability.sh) continue ;; esac
   found=$((found+1))
-  rel="${f#$root/}"
+  # "$root" MUST stay quoted inside the expansion: unquoted, the prefix is read
+  # as a glob pattern, so any bracket metacharacter in the checkout path defeats
+  # the strip (shellcheck SC2295). The bracketed-path assertion below guards it.
+  rel="${f#"$root"/}"
   case "$rel" in
     bin/*)   found_bin=$((found_bin+1)) ;;
     hooks/*) found_hooks=$((found_hooks+1)) ;;
@@ -497,11 +535,19 @@ done
 # a flat `found >= 4` on their own, so the tests/ widening that #19 exists to
 # deliver had no floor protection at all -- move the real tests into a
 # tests/unit/ subdirectory and the run still printed a clean green sweep having
-# scanned no test file. Any partial loss from one glob (a rename, a .bash
-# migration, a helper relocated into tests/fixtures/) was equally invisible.
-# A raised flat floor would not fix that: it needs bumping on every file
-# added or removed, and one directory can still go to zero while another
-# covers for it. One assertion per directory has neither problem.
+# scanned no test file. A raised flat floor would not fix that: it needs
+# bumping on every file added or removed, and one directory can still go to
+# zero while another covers for it. A per-directory floor has neither problem.
+#
+# Be clear about the size of what this buys, though. The floor is `>= 1`, so it
+# catches only the TOTAL loss of a directory. PARTIAL loss stays invisible:
+# rename one script to .bash, or relocate one helper into tests/fixtures/, and
+# the remaining files keep the count above zero -- the run prints
+# "scanned 6 script(s) under tests/", exits 0, and the construct in the file
+# that dropped out is never scanned. Catching that needs a per-file inventory
+# (or a count assertion that has to be bumped on every add), which is out of
+# scope here; the floor is a tripwire on a directory disappearing, not a
+# guarantee that every script in it was seen.
 dir_floor() { # dir count
   if [ "$2" -ge 1 ]; then
     ok "scanned $2 script(s) under $1/"
@@ -514,6 +560,40 @@ dir_floor hooks "$found_hooks"
 dir_floor tests "$found_tests"
 echo "scanned $found scripts under bin/, hooks/, tests/"
 
+# --- Regression: the sweep must survive glob metacharacters in the repo path. --
+# `rel` is produced by stripping "$root/" off the front of "$f". If the prefix is
+# left unquoted inside the expansion (`${f#$root/}`) the shell reads it as a GLOB
+# PATTERN, not as literal text -- so a checkout whose path contains bracket
+# metacharacters (a git worktree named `w[1]`, say) fails to strip, `rel` stays
+# absolute, none of the bin/*|hooks/*|tests/* arms above match, and all three
+# per-directory floors report "scanned no scripts" on a tree that in fact scanned
+# every file. Quoting inside the expansion is the fix (shellcheck SC2295); this
+# assertion is what keeps it quoted. It re-runs this very script from a copy
+# rooted at a bracketed directory and checks the floors still pass.
+# SDLC_PORTABILITY_NESTED is what stops that inner run from recursing here for
+# ever; it is set only by this block and means nothing outside it.
+if [ -z "${SDLC_PORTABILITY_NESTED:-}" ]; then
+  meta="$fx/w[1]"
+  mkdir -p "$meta/bin" "$meta/hooks" "$meta/tests"
+  for d in bin hooks tests; do
+    printf '%s\n' '#!/bin/sh' 'echo probe' > "$meta/$d/probe.sh"
+  done
+  cp "$here/${0##*/}" "$meta/tests/test-portability.sh"
+  nested=$(SDLC_PORTABILITY_NESTED=1 bash "$meta/tests/test-portability.sh" 2>&1)
+  missing=""
+  for d in bin hooks tests; do
+    case "$nested" in
+      *"ok: scanned 1 script(s) under $d/"*) ;;
+      *) missing="$missing $d" ;;
+    esac
+  done
+  if [ -z "$missing" ]; then
+    ok "per-directory floors survive glob metacharacters in the repo path"
+  else
+    bad "per-directory floors broke under a repo path containing glob metacharacters (nothing counted for:$missing) -- the \$root prefix strip is being read as a pattern instead of literal text"
+  fi
+fi
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
 ```
@@ -521,9 +601,9 @@ echo "passed=$pass failed=$fail"
 - [ ] **Step 3: Run the guard against the fixed tree**
 
 Run: `bash tests/test-portability.sh; echo "exit=$?"`
-Expected: all `ok:`, `passed=157 failed=0`, `exit=0`. No `FAIL:` lines. (1
-check-table floor + 32 self-test + 121 real-sweep + 3 per-directory floors =
-157; see the confirmed breakdown above.)
+Expected: all `ok:`, `passed=158 failed=0`, `exit=0`. No `FAIL:` lines. (1
+check-table floor + 32 self-test + 121 real-sweep + 3 per-directory floors + 1
+glob-metacharacter path regression = 158; see the confirmed breakdown above.)
 
 - [ ] **Step 4: Prove the self-test is real (mutation check — evidence for AC-2)**
 
@@ -543,9 +623,19 @@ bash tests/test-portability.sh >/dev/null && echo "restored-green"
 
 Expected: the mutated run prints two `FAIL:` lines naming
 `guard MISSED sed -i, BSD needs a mandatory suffix arg` (one for the offenders
-fixture, one for the oddws tab/double-space fixture) and `passed=155 failed=2`;
+fixture, one for the oddws tab/double-space fixture) and `passed=156 failed=2`;
 the restore run is green again (`restored-green`). Record this output in the
 PR as the go-red evidence, mirroring #16's `passed=9 failed=2`.
+
+The glob-metacharacter regression has its own mutation, and it must be run on a
+COPY of the tree rather than in place — drop the quotes back out of the prefix
+strip (`rel="${f#"$root"/}"` → `rel="${f#$root/}"`) and re-run. Expected:
+`FAIL: per-directory floors broke under a repo path containing glob
+metacharacters (nothing counted for: bin hooks tests)` and `passed=157
+failed=1`. That failure appears even though the repo itself sits at a
+metacharacter-free path, which is the point of the assertion: it re-runs the
+script from a copy rooted at `w[1]` inside the temp fixture dir, so the bug is
+reproduced without depending on where the checkout happens to live.
 
 - [ ] **Step 5: False-positive spot check against the real tree (evidence for AC-5)**
 
@@ -564,7 +654,7 @@ done
 ```
 Expected: every line `passed=N failed=0`, with these totals —
 `test-cleanup-skill` 13, `test-context-tripwire` 8, `test-handoff-pickup` 9,
-`test-handoff-worktree` 2, `test-lint-before-push` 24, `test-portability` 157,
+`test-handoff-worktree` 2, `test-lint-before-push` 24, `test-portability` 158,
 `test-sdlc-backend` 140, `validate-skills` 24. Every total except
 `test-portability` is unchanged from Baseline.
 
