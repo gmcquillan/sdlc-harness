@@ -43,8 +43,16 @@ strip() { sed 's/^[[:space:]]*#.*//' "$1" 2>/dev/null; }
 #   - split flags -- `sed -n -i`, `date -u -d` -- are not caught, only the
 #     combined `sed -ni` / `date -ud`;
 #   - long-form GNU spellings -- `sed --in-place`, `date --date`, `base64
-#     --wrap`, `stat --format`, `readlink --canonicalize` -- are not caught.
-# Both are follow-up territory (#19 scoped to the "at minimum" short forms).
+#     --wrap`, `stat --format`, `readlink --canonicalize` -- are not caught;
+#   - `zgrep -P` / `xzgrep -P` were caught before the lead-in and are not any
+#     more: the `g`/`p` before `grep` is an alnum, so the class rejects them
+#     exactly as it rejects `ggrep`. This is inherent, not an oversight -- one
+#     character class cannot both exempt `gsed`/`ggrep` (the portable remedy)
+#     and catch `zgrep` (a real defect), because the two are indistinguishable
+#     one character to the left. The trade is judged worth it: `grep -P` on a
+#     plain file is the realistic bad form, and it is still caught.
+# All three are follow-up territory (#19 scoped to the "at minimum" short
+# forms); the zgrep case needs an explicit utility list, not a wider class.
 # Whitespace between utility and flag is NOT a gap: [[:space:]][[:space:]]*
 # covers a tab or any run of spaces, and the oddws fixture below asserts it.
 checks() {
@@ -52,7 +60,7 @@ checks() {
 GNU-only regex escape (\b \B \w \W \s \S)|\\[bBwWsS]
 GNU-only word-boundary escape (\< \>)|\\[<>]
 BSD-only word boundary ([[:<:]] [[:>:]])|\[\[:[<>]:\]\]
-grep --perl-regexp (GNU-only)|grep .*--perl-regexp
+grep --perl-regexp (GNU-only)|(^|[^[:alnum:]_-])grep[[:space:]].*--perl-regexp
 grep -P (GNU-only)|(^|[^[:alnum:]_-])grep[[:space:]][[:space:]]*-[a-zA-Z]*P
 sed -i, BSD needs a mandatory suffix arg|(^|[^[:alnum:]_-])sed[[:space:]][[:space:]]*-[a-zA-Z]*i
 readlink -f, absent on stock macOS|(^|[^[:alnum:]_-])readlink[[:space:]][[:space:]]*-[a-zA-Z]*f
@@ -166,9 +174,11 @@ EOF
 #
 # Two families of near-miss earn their place here:
 #   - the brew-coreutils `g*` binaries (gsed, gdate, gstat, greadlink,
-#     gbase64). These are the portable *fix* -- the whole point of installing
-#     them is to get GNU flag semantics on a Mac -- so a pattern that matches
-#     any string merely ending in the utility name would red-flag the remedy.
+#     gbase64, ggrep). These are the portable *fix* -- the whole point of
+#     installing them is to get GNU flag semantics on a Mac -- so a pattern
+#     that matches any string merely ending in the utility name would
+#     red-flag the remedy. `ggrep --perl-regexp` covers the long-form row,
+#     which kept a bare `grep .*` lead-in after the rest were anchored.
 #   - genuinely portable flagged forms (`date -u`, `readlink -n`, `base64 -d`,
 #     `stat -L`), so a pattern that lost its flag letter and banned the
 #     utility's whole flag space could not slip through. `stat -f` and
@@ -189,6 +199,7 @@ readlink -n "$x"
 base64 -d <in >out
 stat -L "$x"
 gsed -i 's/a/b/' f
+ggrep --perl-regexp 're' f
 greadlink -f "$x"
 gbase64 -w0 <in >out
 gdate -d @1700000000
@@ -200,27 +211,80 @@ timeout=5
 echo "waited $timeout seconds"
 EOF
 
-# Assert each check fires on offenders and is silent on portable.
+# Both offender fixtures are laid out one line per check, in checks() order:
+# fixture line N is the construct for check N (offenders.sh has an extra
+# line 11 for the bare-timeout check, which is asserted separately below).
+# Assertions are bound to that line number, not merely to "matched somewhere":
+# an unbound assertion passes when a pattern cross-matches a *sibling's*
+# fixture line, which is exactly what an ordinary copy-paste row misalignment
+# produces. The three regex-escape checks are the live risk -- they carry no
+# command-name prefix, so nothing else anchors them to their own construct,
+# and a row that silently inherits its neighbour's pattern would still print
+# "guard catches ..." while the class it names went completely unguarded.
+# Comparing the whole matched-line list (not just its first entry) also fails
+# a pattern that hits its own line *and* a sibling's.
+hit_lines() { # file pattern -> space-free list of matching line numbers
+  simple_hits "$1" "$2" | cut -d: -f1 | tr '\n' ' ' | sed 's/[[:space:]]*$//'
+}
+
+# Assert each check fires on its own offender line and is silent on portable.
 selftest() {
-  local desc pat
+  local desc pat n got
+  n=0
   checks | while IFS='|' read -r desc pat; do
-    [ -n "$(simple_hits "$fx/offenders.sh" "$pat")" ] \
-      && echo "OK|self-test: guard catches $desc" \
-      || echo "BAD|self-test: guard MISSED $desc in the offenders fixture"
-    [ -n "$(simple_hits "$fx/oddws.sh" "$pat")" ] \
-      && echo "OK|self-test: guard catches $desc across tab/double-space" \
-      || echo "BAD|self-test: guard MISSED $desc when the flag is tab/double-space separated"
+    n=$((n+1))
+    got=$(hit_lines "$fx/offenders.sh" "$pat")
+    if [ "$got" = "$n" ]; then
+      echo "OK|self-test: guard catches $desc on offenders line $n"
+    elif [ -z "$got" ]; then
+      echo "BAD|self-test: guard MISSED $desc in the offenders fixture"
+    else
+      echo "BAD|self-test: $desc matched offenders line(s) [$got], expected only line $n -- the pattern is cross-matching another check's construct"
+    fi
+    got=$(hit_lines "$fx/oddws.sh" "$pat")
+    if [ "$got" = "$n" ]; then
+      echo "OK|self-test: guard catches $desc across tab/double-space on oddws line $n"
+    elif [ -z "$got" ]; then
+      echo "BAD|self-test: guard MISSED $desc when the flag is tab/double-space separated"
+    else
+      echo "BAD|self-test: $desc matched oddws line(s) [$got], expected only line $n -- the pattern is cross-matching another check's construct"
+    fi
     [ -z "$(simple_hits "$fx/portable.sh" "$pat")" ] \
       && echo "OK|self-test: no false positive for $desc" \
       || echo "BAD|self-test: false positive for $desc on portable code"
   done
-  [ -n "$(timeout_hits "$fx/offenders.sh")" ] \
-    && echo "OK|self-test: guard catches bare timeout" \
-    || echo "BAD|self-test: guard MISSED bare timeout in the offenders fixture"
+  # Same line-binding for the bare-timeout check: its construct is the last
+  # line of offenders.sh, and nothing else in that fixture may satisfy it.
+  got=$(timeout_hits "$fx/offenders.sh" | cut -d: -f1 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+  if [ "$got" = "11" ]; then
+    echo "OK|self-test: guard catches bare timeout on offenders line 11"
+  elif [ -z "$got" ]; then
+    echo "BAD|self-test: guard MISSED bare timeout in the offenders fixture"
+  else
+    echo "BAD|self-test: bare timeout matched offenders line(s) [$got], expected only line 11"
+  fi
   [ -z "$(timeout_hits "$fx/portable.sh")" ] \
     && echo "OK|self-test: no false positive for bare timeout (tmo/gtimeout)" \
     || echo "BAD|self-test: false positive for bare timeout on guarded/gtimeout code"
 }
+
+# The check table is a here-doc, and the shell does not validate here-doc
+# contents: a botched merge-conflict resolution or rebase can delete rows from
+# checks() without producing a syntax error or any other symptom. selftest()
+# iterates that same table, so its assertions disappear along with the rows --
+# the one mechanism that should catch the loss is coupled to the thing that
+# breaks, and the suite exits 0 with a smaller `passed=` while the whole class
+# these checks exist to catch goes unguarded. There is no CI here, so nobody is
+# diffing that number. Assert the floor explicitly instead. Bump the 10 when a
+# check is added; a deliberate removal has to edit this line, which is the
+# point. `grep -c '|'` counts only well-formed "desc|pattern" rows.
+nchecks=$(checks | grep -c '|')
+if [ "$nchecks" -ge 10 ]; then
+  ok "check table has $nchecks checks"
+else
+  bad "check table shrank: expected at least 10 checks, found $nchecks"
+fi
+
 tally <<EOF
 $(selftest)
 EOF
@@ -233,22 +297,43 @@ EOF
 # these constructs as literals, so it necessarily matches itself. Excluding it
 # (issue #19, option 1) is the cheapest of the three options -- the scanner is
 # the one file whose reviewers are already thinking about portability.
-found=0
+found=0; found_bin=0; found_hooks=0; found_tests=0
 for f in "$root"/bin/*.sh "$root"/hooks/*.sh "$root"/tests/*.sh; do
   [ -f "$f" ] || continue
   case "$f" in */test-portability.sh) continue ;; esac
   found=$((found+1))
+  rel="${f#$root/}"
+  case "$rel" in
+    bin/*)   found_bin=$((found_bin+1)) ;;
+    hooks/*) found_hooks=$((found_hooks+1)) ;;
+    tests/*) found_tests=$((found_tests+1)) ;;
+  esac
   tally <<EOF
-$(sweep "$f" "${f#$root/}")
+$(sweep "$f" "$rel")
 EOF
 done
 
-# A glob that matched nothing would report a clean sweep of zero files.
-if [ "$found" -ge 4 ]; then
-  ok "scanned $found scripts under bin/, hooks/, tests/"
-else
-  bad "expected at least 4 scripts under bin/, hooks/, tests/, found $found"
-fi
+# A glob that matched nothing would report a clean sweep of zero files. The
+# floor is PER DIRECTORY, not a total: bin/ (1 file) and hooks/ (3) already met
+# a flat `found >= 4` on their own, so the tests/ widening that #19 exists to
+# deliver had no floor protection at all -- move the real tests into a
+# tests/unit/ subdirectory and the run still printed a clean green sweep having
+# scanned no test file. Any partial loss from one glob (a rename, a .bash
+# migration, a helper relocated into tests/fixtures/) was equally invisible.
+# A raised flat floor would not fix that: it needs bumping on every file
+# added or removed, and one directory can still go to zero while another
+# covers for it. One assertion per directory has neither problem.
+dir_floor() { # dir count
+  if [ "$2" -ge 1 ]; then
+    ok "scanned $2 script(s) under $1/"
+  else
+    bad "scanned no scripts under $1/ -- that glob matched nothing, so the directory went unscanned"
+  fi
+}
+dir_floor bin "$found_bin"
+dir_floor hooks "$found_hooks"
+dir_floor tests "$found_tests"
+echo "scanned $found scripts under bin/, hooks/, tests/"
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
