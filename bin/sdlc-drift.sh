@@ -9,6 +9,10 @@
 # advisory, so hits print to stdout and the command still exits 0. A
 # caller that wants to gate on drift must test for non-empty output, never
 # for a nonzero status.
+#
+# Matching is deliberately case-sensitive: case-insensitive matching on
+# short aliases (Item, Job, Run) would flag ordinary identifiers in nearly
+# every diff, which is unacceptable noise for an advisory check.
 set -u
 
 die() { printf 'sdlc-drift: %s\n' "$1" >&2; exit "${2:-1}"; }
@@ -35,13 +39,13 @@ cmd_check() {
   # b), and the BSD spelling [[:<:]] is rejected by GNU -- there is no
   # portable third spelling, so the bracket class is the repo idiom. See
   # tests/validate-skills.sh:76,82 for the same construction.
-  awk '
+  awk -v glossary_path="$glossary" '
     function esc(s,   t) {
       t = s
       gsub(/[][(){}.*+?^$|]/, "\\\\&", t)
       return t
     }
-    BEGIN { path = "(unknown)"; ln = 0; na = 0; term = "" }
+    BEGIN { path = "(unknown)"; ln = 0; na = 0; term = ""; pending = 0; skip = 0 }
 
     # ---- pass 1: the glossary ------------------------------------------
     # FILENAME != "-" excludes stdin (the diff) from pass 1. With an empty
@@ -76,30 +80,56 @@ cmd_check() {
     }
 
     # ---- pass 2: the diff ----------------------------------------------
-    /^\+\+\+ / {
+    # A "--- " header is only real when immediately followed by a "+++ "
+    # header, so "--- " just arms a one-line pending flag rather than
+    # acting itself. Eating a "--- " line that was really a removed line
+    # is harmless -- removed lines never advance the line counter. Every
+    # other rule below clears the flag, so an ADDED line whose content
+    # happens to start with "++ " (rendering as "+++ ..." in the diff) is
+    # never mistaken for a file header: pending is false by the time it is
+    # seen, so it falls through to the ordinary added-line rule instead.
+    /^--- / { pending = 1; next }
+
+    /^\+\+\+ / && pending {
       path = substr($0, 5)
       sub(/\t.*$/, "", path)
       if (path ~ /^b\//) path = substr(path, 3)
+      # Skip the glossary file itself: it DEFINES the vocabulary, so its
+      # own "**Not:**" lines are not drift. Match both the path this run
+      # was actually pointed at (glossary_path, passed in with -v so a
+      # fixture path works too) and the canonical repo path, so a real
+      # PR diff is covered even when --glossary points elsewhere.
+      skip = (path == glossary_path || path == "docs/domain/glossary.md")
+      pending = 0
       next
     }
-    /^--- / { next }
+
     /^@@/ {
+      pending = 0
       if (match($0, /\+[0-9]+/)) ln = substr($0, RSTART + 1, RLENGTH - 1) + 0
       next
     }
+
+    # "\ No newline at end of file" is diff metadata, not a line of file
+    # content; skip it so it never advances the line counter.
+    /^\\/ { pending = 0; next }
+
     /^\+/ {
+      pending = 0
       text = substr($0, 2)
-      for (i = 1; i <= na; i++) {
-        if (text ~ pat[i]) {
-          printf "%s:%d — '\''%s'\'' found — should be '\''%s'\''\n", \
-                 path, ln, alias[i], canon[i]
+      if (!skip) {
+        for (i = 1; i <= na; i++) {
+          if (text ~ pat[i]) {
+            printf "%s:%d — '\''%s'\'' found — should be '\''%s'\''\n", \
+                   path, ln, alias[i], canon[i]
+          }
         }
       }
       ln++
       next
     }
-    /^-/ { next }
-    { ln++ }
+    /^-/ { pending = 0; next }
+    { pending = 0; ln++ }
   ' "$glossary" -
 }
 

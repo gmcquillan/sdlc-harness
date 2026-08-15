@@ -124,6 +124,100 @@ got=$(bash "$SUT" check --glossary "$crlf" <"$crlfdiff")
 eq "src/app.js:2 — 'Gadget' found — should be 'Widget'" "$got" \
    "CRLF-authored glossary still reports the violation (no silent false negative)"
 
+# --- an ADDED line whose content starts with "++ " must not be mistaken --
+# --- for a "+++ " file header (only real when it follows a "--- " line) --
+plusplus="$tmp/plusplus.diff"
+cat >"$plusplus" <<'PLUSPLUS'
+--- a/doc.md
++++ b/doc.md
+@@ -1,1 +1,3 @@
+ existing line
++++ hunk sample from a plan doc
++Use Gadget here
+PLUSPLUS
+
+got=$(bash "$SUT" check --glossary "$glossary" <"$plusplus")
+eq "doc.md:3 — 'Gadget' found — should be 'Widget'" "$got" \
+   "an added line starting with '++ ' is not mistaken for a +++ file header"
+
+# --- "\ No newline at end of file" is diff metadata, not a content line --
+# --- (the old file lacked a trailing newline, so the marker sits between
+# --- the removed line and the added one -- it must not count as a line)
+nonl="$tmp/nonl.diff"
+cat >"$nonl" <<'NONL'
+--- a/nn.txt
++++ b/nn.txt
+@@ -1,2 +1,2 @@
+ line one
+-old last line
+\ No newline at end of file
++Gadget here
+NONL
+
+got=$(bash "$SUT" check --glossary "$glossary" <"$nonl")
+eq "nn.txt:2 — 'Gadget' found — should be 'Widget'" "$got" \
+   "a no-newline marker does not advance the line counter"
+
+# --- the glossary's own diff never self-reports, but a sibling file in ---
+# --- the SAME diff is still checked (proves the file is skipped, not the -
+# --- whole run) -----------------------------------------------------------
+selfdiff="$tmp/glossary-self.diff"
+cat >"$selfdiff" <<'SELFDIFF'
+--- a/docs/domain/glossary.md
++++ b/docs/domain/glossary.md
+@@ -1,2 +1,3 @@
+ ### Widget
+ The unit of work a user schedules. Created by a Plan, consumed by a Run.
++**Not:** Gadget, Item
+--- a/src/app.js
++++ b/src/app.js
+@@ -1,1 +1,2 @@
+ const x = 1;
++const Gadget = made();
+SELFDIFF
+
+got=$(bash "$SUT" check --glossary "$glossary" <"$selfdiff")
+eq "src/app.js:2 — 'Gadget' found — should be 'Widget'" "$got" \
+   "the glossary's own file is skipped, but a sibling file in the same diff is still checked"
+
+# --- a multi-file diff reports correct per-file paths and line numbers ---
+multifile="$tmp/multifile.diff"
+cat >"$multifile" <<'MULTIFILE'
+--- a/src/a.js
++++ b/src/a.js
+@@ -1,1 +1,2 @@
+ const x = 1;
++const Gadget = 1;
+--- a/src/b.js
++++ b/src/b.js
+@@ -5,1 +5,2 @@
+ const y = 2;
++const Job = 2;
+MULTIFILE
+
+got=$(bash "$SUT" check --glossary "$glossary" <"$multifile")
+want=$(printf '%s\n%s' \
+  "src/a.js:2 — 'Gadget' found — should be 'Widget'" \
+  "src/b.js:6 — 'Job' found — should be 'Run'")
+eq "$want" "$got" "a multi-file diff reports correct per-file paths and line numbers"
+
+# --- a multi-hunk diff resets the line counter for the second hunk -------
+multihunk="$tmp/multihunk.diff"
+cat >"$multihunk" <<'MULTIHUNK'
+--- a/src/multi.js
++++ b/src/multi.js
+@@ -1,1 +1,2 @@
+ const x = 1;
++const y = 2;
+@@ -10,1 +11,2 @@
+ const z = 3;
++const Gadget = 4;
+MULTIHUNK
+
+got=$(bash "$SUT" check --glossary "$glossary" <"$multihunk")
+eq "src/multi.js:12 — 'Gadget' found — should be 'Widget'" "$got" \
+   "a multi-hunk diff reports the correct line number in the second hunk"
+
 # --- usage errors are exit 2 --------------------------------------------
 bash "$SUT" >/dev/null 2>&1; eq "2" "$?" "no subcommand is a usage error"
 bash "$SUT" bogus >/dev/null 2>&1; eq "2" "$?" "unknown subcommand is a usage error"
