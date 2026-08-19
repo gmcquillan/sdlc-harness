@@ -1,6 +1,6 @@
 ---
 name: interview
-description: Use when starting a new feature or project under the SDLC pipeline — interviews the user to surface intent, wraps superpowers:brainstorming to produce a committed spec that ends with a PR-scoped, context-budgeted Decomposition section, then hands off to sdlc:ticket.
+description: Use when starting a new feature or project under the SDLC pipeline — interviews the user to surface intent, wraps superpowers:brainstorming to produce a spec (written but never committed) that ends with a PR-scoped, context-budgeted Decomposition section, then hands off to sdlc:ticket.
 ---
 
 # SDLC Interview → Spec
@@ -54,9 +54,17 @@ feedback to tighten this section's estimates.
 ## Override 3 — Terminal state
 
 Brainstorming normally ends by invoking writing-plans. **Do not.**
-Per-issue planning happens inside sdlc:implement, in fresh context. After
-the spec is committed to `docs/specs/YYYY-MM-DD-<topic>.md` and the user
-has approved it, end with exactly this handoff:
+Per-issue planning happens inside sdlc:implement, in fresh context.
 
-> "Spec committed to `<path>`. Run `/sdlc:ticket <path>` (fresh session
-> recommended) to create the GitHub issues."
+Spec files are a working artifact for the handoff to `sdlc:ticket`, never a
+committed deliverable — all durable spec content ends up in the tickets, not
+in git. Before writing the file, ensure `docs/specs/` is ignored (once,
+shared across the repo): append it to `.gitignore` if the line is not
+already there. Then write the spec to
+`docs/specs/YYYY-MM-DD-<topic>.md` as usual, but do **not** `git add` or
+`git commit` it. After the user has approved it, end with exactly this
+handoff:
+
+> "Spec written to `<path>` (gitignored, not committed — its content moves
+> into GitHub/Jira issues next, then the file is deleted). Run
+> `/sdlc:ticket <path>` (fresh session recommended) to create the issues."

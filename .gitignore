@@ -1,3 +1,4 @@
 .handoff-*.md
 .worktrees/
 docs/superpowers*
+docs/specs/

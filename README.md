@@ -31,10 +31,11 @@ track of the plan, silently drops requirements, merges half-finished
 work, or burns its context re-reading files it already understood. This
 harness addresses each directly:
 
-- **State lives outside the model.** The spec is a committed file; the
-  work breakdown is GitHub issues with real dependency edges. A session
-  can die at any point and the next one picks up from git + issues, not
-  from a summary.
+- **State lives outside the model.** The spec is a local working file
+  (gitignored, never committed — its content moves into the tickets and
+  the file is then deleted); the work breakdown is GitHub issues with real
+  dependency edges. A session can die at any point and the next one picks
+  up from git + issues, not from a summary.
 - **Breadth goes to subagents; judgment stays in the main loop.** Bulky
   exploration (mapping a subsystem, running a test suite, scanning a
   backlog) is delegated so its output never bloats the deciding session.
@@ -70,8 +71,8 @@ A typical feature flows through the skills in order. Each is a slash
 command; most run best in a fresh session.
 
 1. **`/sdlc:interview`** — interviews you to pin down intent, then wraps
-   the brainstorming skill to produce a committed spec that ends in a
-   PR-scoped, context-budgeted **Decomposition** section.
+   the brainstorming skill to produce a spec (written, never committed)
+   that ends in a PR-scoped, context-budgeted **Decomposition** section.
 2. **`/sdlc:ticket <spec>`** — translates that decomposition into one
    epic issue plus `sdlc:task` child issues with dependency edges, behind
    a dry-run approval gate.
@@ -131,7 +132,7 @@ bound, so it has no step 0 to resolve.
 
 | Skill | Does |
 |---|---|
-| `sdlc:interview` | Interview → committed spec ending in a PR-scoped Decomposition |
+| `sdlc:interview` | Interview → spec (never committed) ending in a PR-scoped Decomposition |
 | `sdlc:ticket <spec>` | Decomposition → epic + `sdlc:task` child issues (dry-run gated) |
 | `sdlc:next [epic#]` | Survey open tasks → rank ready ones by tickets-unblocked → confirm → hand off to `implement` |
 | `sdlc:implement [#]` | Claim issue → scout-map → worktree branch → plan → TDD via subagents → PR |

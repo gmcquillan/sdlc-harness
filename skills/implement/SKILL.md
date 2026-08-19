@@ -33,8 +33,9 @@ per checklist item.
    MUST branch from this freshly-synced base.
 3. **Claim it** (prevents double pickup by parallel sessions):
    `gh issue edit <n> --add-label "sdlc:in-progress" --add-assignee "@me"`
-4. **Understand.** Read the issue body and the spec section it links —
-   main loop. Then invoke `fable-harness:systems-mapping` — scout
+4. **Understand.** Read the issue body — it is self-contained; there is no
+   spec file to cross-reference — main loop. Then invoke
+   `fable-harness:systems-mapping` — scout
    subagents map the affected subsystem; only their maps return to you.
    Do NOT read the subsystem file-by-file yourself. If
    `docs/domain/glossary.md` exists, read it and bind its canonical terms.
@@ -68,7 +69,7 @@ per checklist item.
     git push -u origin "sdlc/<ref>-<slug>"
     gh pr create --title "<issue title>" --body "Closes #<issue>
 
-    Epic: #<epic> · Spec: \`<spec-path>\` §T<n>
+    Epic: #<epic>
 
     ## Acceptance criteria
     - [x] <criterion — evidence: <one line>>"

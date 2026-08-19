@@ -187,7 +187,7 @@ tool: toolmap.ops.create_issue
   issue type: Epic
   labels:     ["sdlc:epic"]    # what the lookup above matches on
   summary:    [epic] <slug>    # the exact string the lookup requires
-  description: Spec: `<spec-path>` (commit <sha>)
+  description: <the spec's overview, inlined — no spec-path pointer>
                ## Tasks
                - [ ] <REF> <title>       # backfilled once children exist
 ```
@@ -198,15 +198,15 @@ Once the children exist, backfill that checklist — this is `ticket` step
 ```
 tool: toolmap.ops.edit_issue
   ref:         <epic key>
-  description: Spec: `<spec-path>` (commit <sha>)
+  description: <the same inlined overview>
                ## Tasks
                - [ ] <REF> <title>       # one line per child, in T-order
 ```
 
 `edit_issue` **replaces the description wholesale**, which is what this
-step wants — but it means the `Spec: <path> (commit <sha>)` line must be
-re-emitted along with the checklist. Send only the `## Tasks` block and
-the spec provenance is gone.
+step wants — but it means the inlined overview must be re-emitted along
+with the checklist. Send only the `## Tasks` block and the epic loses its
+own description.
 
 The `## Tasks` checklist is written for humans, exactly as on GitHub, with
 `PROJ-123` references in place of `#123`. The authoritative parent-child
