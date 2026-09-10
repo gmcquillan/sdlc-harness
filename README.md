@@ -42,7 +42,7 @@ harness addresses each directly:
 - **Humans gate the irreversible steps.** The pipeline never merges to a
   shared branch, never pushes, and never opens a PR without explicit
   confirmation. Approval for one step does not extend to the next.
-- **Running low on context is a first-class event.** At ~120k tokens a
+- **Running low on context is a first-class event.** At ~200k tokens a
   tripwire nudges a handoff; the session commits its WIP, writes a
   handoff file, and a fresh session resumes exactly where it left off.
 
@@ -146,7 +146,7 @@ bound, so it has no step 0 to resolve.
 ## Hooks
 
 - **context-tripwire** (PostToolUse): estimates context (transcript
-  bytes ÷ 4); nudges handoff once at 120k, hard at 150k.
+  bytes ÷ 4); nudges handoff once at 200k, hard at 250k.
 - **handoff-pickup** (SessionStart): announces leftover `.handoff-*.md`
   files so fresh sessions self-resume.
 - **lint-before-push** (PreToolUse/Bash): on any `git push`, auto-detects

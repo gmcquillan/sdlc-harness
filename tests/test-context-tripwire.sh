@@ -27,19 +27,19 @@ empty() { # desc
 tp="$tmp/main.jsonl"
 hook baseline s1 "$tp"
 
-head -c 400000 /dev/zero > "$tp"                       # ≈100k tokens
+head -c 700000 /dev/zero > "$tp"                       # ≈175k tokens
 hook check s1 "$tp"
 empty "below soft: silent"
 
-head -c 500000 /dev/zero > "$tp"                       # ≈125k tokens
+head -c 840000 /dev/zero > "$tp"                       # ≈210k tokens
 hook check s1 "$tp"
-contains "soft fires at 125k" SOFT
+contains "soft fires at 210k" SOFT
 hook check s1 "$tp"
 empty    "soft debounced"
 
-head -c 620000 /dev/zero > "$tp"                       # ≈155k tokens
+head -c 1040000 /dev/zero > "$tp"                      # ≈260k tokens
 hook check s1 "$tp"
-contains "hard fires at 155k" HARD
+contains "hard fires at 260k" HARD
 hook check s1 "$tp"
 empty    "hard debounced"
 
@@ -47,7 +47,7 @@ hook baseline s1 "$tp"                                 # new session baseline
 hook check s1 "$tp"
 contains "baseline re-arms (hard refires)" HARD
 
-side="$tmp/sidechain.jsonl"; head -c 900000 /dev/zero > "$side"
+side="$tmp/sidechain.jsonl"; head -c 1100000 /dev/zero > "$side"  # ≈275k tokens
 hook baseline s2 "$tp"
 hook check s2 "$side"
 empty "sidechain transcript ignored"
