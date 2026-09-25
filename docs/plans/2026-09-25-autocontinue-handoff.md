@@ -26,7 +26,8 @@
 - **Manual `--continue` regression:** a human explicitly passing `--continue` in `interview`/`ticket`/anywhere must still work exactly as today — the new auto-check must only intercept the *unflagged* tripwire-response path, never override an explicit human flag. Task 2's step tests this by keeping the manual path's wording unconditional and gating only the *new* paragraph on "this invocation is a direct tripwire response."
 - **Judgment phases must never auto-advance:** `interview` and `ticket` must fall through to the default end-turn path even when a tripwire fires mid-phase — a bug here would let unattended execution touch scope/requirements judgment the epic explicitly reserves for humans. Task 1's test suite pins this (`sdlc-hopcount.sh check interview` / `check ticket` both exit 2).
 - **Cap reached must report why, not go silent or loop:** hitting the cap must fall back to the default end-turn path with a message naming the cap explicitly (issue #34 AC), not silently stop or retry. Task 1's test pins the exit-1/no-stdout contract; Task 2's step 4 wording pins the human-facing message.
-- **File-supersession must delete the exact prior file, never a wildcard:** the fix in Task 2 deletes the specific prior handoff path once the new one is written, but a wildcard delete could destroy an unrelated, still-unresumed older handoff sitting in the same directory (this repo currently has exactly such a file, `.handoff-2026-09-15-...md`, coexisting with the one this plan implements from). The wording must reference the file by its known path only.
+- **File-supersession must delete the exact prior file, never a wildcard:** the fix in Task 2 deletes the specific prior handoff path once the new one is written — for BOTH the manual and automatic `--continue` paths, per the mid-session amendment — but a wildcard delete could destroy an unrelated, still-unresumed older handoff sitting in the same directory (this repo currently has exactly such a file, `.handoff-2026-09-15-...md`, coexisting with the one this plan implements from). The wording must reference the file by its known path only.
+- **A dispatched `--continue` subagent must never block on a disambiguation question it cannot answer:** `sdlc:resume`'s newest-default rule (Task 2 step 4) must trigger specifically for `--continue` dispatches, not silently for every multi-file case — a person directly asking to resume still gets asked which file, since they can answer.
 - **Malformed or absent `Hop:` input must not crash or miscount:** a prior handoff predating this feature (no `Hop:` line), a corrupted line, or a nonexistent `--prior` path must all degrade to `n=0` (hop 1), never a shell error or a wrong count. Task 1's test suite pins all three cases.
 
 ---
@@ -233,12 +234,27 @@ git commit -m "feat: add sdlc-hopcount.sh for deterministic auto-continue hop/ca
 
 **Files:**
 - Modify: `skills/handoff/SKILL.md` (step 3 template, step 4 checklist)
+- Modify: `skills/resume/SKILL.md` (step 1 disambiguation rule)
 - Modify: `README.md` (tripwire bullet under "Why", Tests section)
-- Verify (likely no diff): `skills/resume/SKILL.md`
 
 **Interfaces:**
 - Consumes: `sdlc-hopcount.sh check <phase> [prior-handoff-file]` from Task 1 (bare name, on `PATH`).
 - Produces: nothing further consumed by other tasks — this is the last task.
+
+**Amendment (post-writing-plans, pre-execution, ruled by the user
+mid-session):** the original plan only deleted a superseded prior handoff
+file on the *automatic* auto-continue path, and left manual `--continue`
+chains free to accumulate multiple `.handoff-*.md` files — exactly the
+ambiguity `sdlc:resume`'s "several found → ask a human" step exists to
+catch. That ask is fine for an interactive session but breaks a
+non-interactive dispatched subagent (the `--continue` supervisor rule's
+subagent), which cannot answer it. The user explicitly ruled: extend the
+supersession-delete to manual `--continue` too, AND make `sdlc:resume`
+default to the newest file without asking whenever it is invoked as part
+of a `--continue` dispatch (belt-and-suspenders for any stray files from
+before this feature, or from a chain where deletion did not happen for
+some other reason). Steps 2 and 4 below are rewritten accordingly; this
+does not touch the Hop-cap arithmetic in Task 1 at all.
 
 - [ ] **Step 1: Add the `Hop:` field to the handoff file template**
 
@@ -290,34 +306,30 @@ Replace it with:
 
 ```markdown
 4. **Choose the continuation path:**
-   - **Auto-continue check — run this FIRST, but only when this invocation
-     is a direct response to a context-tripwire message** (the hook's
+   - **Find any still-present prior handoff first, regardless of which
+     path this step ends up taking.** Glob for a still-present
+     `.handoff-*.md` at the main worktree root (the same glob `sdlc:resume`
+     uses). If this session was resumed from one, that file is
+     `<prior-handoff-file>` below; if none, there is no prior file for the
+     rest of this step.
+   - **Auto-continue check — run this only when this invocation is a
+     direct response to a context-tripwire message** (the hook's
      distinctive "Context tripwire SOFT/HARD: ..." injected text). A human
      invoking `sdlc:handoff --continue` explicitly skips this check
      entirely and goes straight to the manual `--continue` path below —
      this section only automates the *unflagged* tripwire response, it
      never overrides an explicit human flag:
-     1. Glob for a still-present `.handoff-*.md` at the main worktree root
-        (the same glob `sdlc:resume` uses). If this session was resumed
-        from one, that file is `<prior-handoff-file>` below; if none,
-        omit the argument.
-     2. Run `sdlc-hopcount.sh check <phase> [<prior-handoff-file>]` (bare
+     1. Run `sdlc-hopcount.sh check <phase> [<prior-handoff-file>]` (bare
         name — the plugin's `bin/` is on `PATH`, exactly as with
         `sdlc-backend.sh`/`sdlc-drift.sh`; never write a `bin/`-prefixed
         path).
-     3. **Exit `0`:** write the script's exact stdout line (`Hop: <n> of
+     2. **Exit `0`:** write the script's exact stdout line (`Hop: <n> of
         <cap>`) into this handoff's `## State` section, then take the
-        `--continue` path below automatically. If a `<prior-handoff-file>`
-        was used in step 2, delete that exact file (by its known path —
-        never a wildcard, and never any other `.handoff-*.md` that
-        happens to be present) once this new handoff file has been
-        written successfully. This keeps at most one handoff file alive
-        per chain, which `sdlc:resume`'s "several found → ask a human"
-        rule depends on for unattended chaining.
-     4. **Exit `2`:** phase is `interview` or `ticket` (or unrecognized) —
+        `--continue` path below automatically.
+     3. **Exit `2`:** phase is `interview` or `ticket` (or unrecognized) —
         fall through to the default end-turn path below, unchanged from
         today. Do not write a `Hop:` line.
-     5. **Exit `1`:** the hop cap is reached — fall through to the default
+     4. **Exit `1`:** the hop cap is reached — fall through to the default
         end-turn path below, but tell the human explicitly: "Auto-continue
         hop cap (10) reached without the phase's done condition being met;
         handing back for a human to resume manually or investigate why
@@ -326,11 +338,24 @@ Replace it with:
    - **Default:** end the turn. Tell your human partner: "Handoff written
      to `<file>`. Start a fresh session in the main repo directory
      (`<main_root>`) — it will pick the handoff up automatically." (The
-     handoff-pickup SessionStart hook injects it.)
+     handoff-pickup SessionStart hook injects it.) Leave any
+     `<prior-handoff-file>` found above in place — nothing is superseding
+     it, since no continuation is happening this turn.
    - **`--continue` (invoked with the flag explicitly, or triggered
      automatically by the check above):** dispatch ONE general-purpose
      subagent with the prompt: "Read `<file>` and continue the work per
-     the sdlc:resume skill." Then follow the supervisor rule below.
+     the sdlc:resume skill." Then follow the supervisor rule below. In
+     EITHER case — the explicit human flag or the automatic trigger —
+     once `<file>` has been written successfully and a
+     `<prior-handoff-file>` was found above, delete that exact file (by
+     its known path — never a wildcard, and never any other
+     `.handoff-*.md` that happens to be present). This keeps at most one
+     handoff file alive per chain: a manual `--continue` chain that
+     skipped this would leave stale files behind just as readily as an
+     unattended auto-continue chain would, and either way a later
+     `sdlc:resume` — quite possibly a non-interactive dispatched subagent
+     that cannot answer an interactive disambiguation question — must
+     never have to pick between several live files for the same chain.
 ```
 
 - [ ] **Step 3: Add the compaction guidance**
@@ -358,26 +383,55 @@ stale content:
   content is being duplicated instead of pointed at.
 ```
 
-- [ ] **Step 4: Verify `skills/resume/SKILL.md` needs no change**
+- [ ] **Step 4: Make `sdlc:resume` default to the newest handoff, without
+  asking, when invoked from a `--continue` dispatch**
 
-Read `skills/resume/SKILL.md` checklist step 2 ("Read it fully. The
-`## Gotchas` section is binding...") and step 6 (archive only once `##
-Next` is verifiably done). Confirm: `sdlc:resume` already reads the
-entire handoff file, so any `Hop:` line in `## State` is already visible
-to it as part of "read it fully" — it needs no special-cased extraction
-because it never acts on the value itself (only the *next*
-`sdlc:handoff` invocation does, via `sdlc-hopcount.sh`, from the file
-that is still on disk). Step 6's archive timing is unaffected: auto-
-continue's file-supersession delete (Task 2 step 2.3 above) is a
+First, confirm what still needs no change: `sdlc:resume` already reads
+the entire handoff file, so any `Hop:` line in `## State` is already
+visible to it as part of "read it fully" (checklist step 2) — it needs no
+special-cased extraction because it never acts on the value itself (only
+the *next* `sdlc:handoff` invocation does, via `sdlc-hopcount.sh`, from
+the file that is still on disk). Step 6's archive timing is unaffected:
+`sdlc:handoff`'s file-supersession delete (Task 2 step 2 above) is a
 *different* code path — the current `sdlc:handoff` invocation deleting
 the file it was itself resumed from, not `sdlc:resume` archiving a file
 whose work it just finished. These two deletions never collide because
 they are triggered by different, non-overlapping conditions (a new
 tripwire firing vs. the phase's own done condition being met).
 
-No diff to `skills/resume/SKILL.md` is needed. Do not edit the file in
-this step — this is a verification-only step, and its outcome (no change
-needed) is the deliverable.
+What DOES need to change, per the user's mid-session ruling: the
+supersession delete above should make multiple live handoff files rare,
+but not impossible — a pre-existing unrelated file (like this repo's own
+`.handoff-2026-09-15-...md`), or a chain where deletion failed partway,
+can still leave more than one on disk. When `sdlc:resume` is invoked as
+part of a `--continue` dispatch (the dispatching prompt reads "Read
+`<file>` and continue the work per the sdlc:resume skill" — a directive
+to continue specific, already-identified work, not a person's open-ended
+"resume my work" ask), there is no synchronous human able to answer an
+`AskUserQuestion` disambiguation prompt; asking would stall the subagent
+indefinitely.
+
+In `skills/resume/SKILL.md` checklist step 1, the current text reads:
+
+```markdown
+   One file → use it. Several → list them with mtimes and ask which to
+   resume (newest is the default). None → tell the user there is nothing to
+   resume and stop.
+```
+
+Change it to:
+
+```markdown
+   One file → use it. Several, and this is a `--continue` dispatch (the
+   invoking prompt names a specific file to continue, not an open-ended
+   human request to resume) → skip the ask, use the newest by mtime
+   automatically, and say which file was picked in the final summary so
+   the human can verify after the fact — a dispatched subagent has no
+   synchronous human to answer a disambiguation question. Several,
+   otherwise → list them with mtimes and ask which to resume (newest is
+   the default). None → tell the user there is nothing to resume and
+   stop.
+```
 
 - [ ] **Step 5: Update `README.md`'s tripwire bullet**
 
@@ -442,12 +496,9 @@ unchanged, so `validate-skills.sh` still passes).
 - [ ] **Step 8: Commit**
 
 ```bash
-git add skills/handoff/SKILL.md README.md
-git commit -m "docs: wire phase-aware auto-continue and hop cap into sdlc:handoff"
+git add skills/handoff/SKILL.md skills/resume/SKILL.md README.md
+git commit -m "docs: wire phase-aware auto-continue and hop cap into sdlc:handoff/resume"
 ```
-
-(No `skills/resume/SKILL.md` in this commit — Step 4 confirmed no change
-is needed there.)
 
 ---
 
