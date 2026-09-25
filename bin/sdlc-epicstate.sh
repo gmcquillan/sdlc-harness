@@ -94,14 +94,14 @@ cmd_init() {
       *) die "init: unknown flag: $1" 2 ;;
     esac
   done
-  local f; f=$(state_file "$ref")
+  local f; f=$(state_file "$ref") || exit $?
   [ -f "$f" ] && die "init: state file already exists for '$ref'" 2
   printf '' | write_state "$f" "$ref" running "$cap" 0 main ""
 }
 
 cmd_status() {
   local ref="${1:-}"; [ -n "$ref" ] || die "status requires an epic ref" 2
-  local f; f=$(state_file "$ref")
+  local f; f=$(state_file "$ref") || exit $?
   [ -f "$f" ] || die "status: no state file for '$ref'" 2
   local epic status cap hops tip detail
   epic=$(read_field "$f" Epic); epic="${epic:-$ref}"
@@ -123,7 +123,7 @@ cmd_record() {
   [ $# -eq 5 ] || die "record requires: <epic-ref> <ticket-ref> <branch> <pr#> <hops>" 2
   local ref="$1" ticket="$2" branch="$3" pr="$4" hops_add="$5"
   case "$hops_add" in ''|*[!0-9]*) die "record: hops must be numeric" 2 ;; esac
-  local f; f=$(state_file "$ref")
+  local f; f=$(state_file "$ref") || exit $?
   [ -f "$f" ] || die "record: no state file for '$ref'" 2
   local epic cap hops_cur stack_lines total status detail
   epic=$(read_field "$f" Epic); epic="${epic:-$ref}"
@@ -150,7 +150,7 @@ cmd_set_status() {
     done|stopped:review-tier-b-c|stopped:blocked) ;;
     *) die "set-status: status must be done, stopped:review-tier-b-c, or stopped:blocked" 2 ;;
   esac
-  local f; f=$(state_file "$ref")
+  local f; f=$(state_file "$ref") || exit $?
   [ -f "$f" ] || die "set-status: no state file for '$ref'" 2
   local epic cap hops tip stack_lines
   epic=$(read_field "$f" Epic); epic="${epic:-$ref}"
