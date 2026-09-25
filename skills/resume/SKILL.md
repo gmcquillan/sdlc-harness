@@ -18,9 +18,15 @@ checklist item.
      | while read -r r; do ls "$r"/.handoff-*.md 2>/dev/null; done
    ```
 
-   One file → use it. Several → list them with mtimes and ask which to
-   resume (newest is the default). None → tell the user there is nothing to
-   resume and stop.
+   One file → use it. Several, and this is a `--continue` dispatch (the
+   invoking prompt names a specific file to continue, not an open-ended
+   human request to resume) → skip the ask, use the newest by mtime
+   automatically, and say which file was picked in the final summary so
+   the human can verify after the fact — a dispatched subagent has no
+   synchronous human to answer a disambiguation question. Several,
+   otherwise → list them with mtimes and ask which to resume (newest is
+   the default). None → tell the user there is nothing to resume and
+   stop.
 2. **Read it fully.** The `## Gotchas` section is binding: decisions
    recorded there are settled — do not re-litigate them.
 3. **Verify state against reality — trust git over prose:**

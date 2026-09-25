@@ -45,6 +45,11 @@ harness addresses each directly:
 - **Running low on context is a first-class event.** At ~200k tokens a
   tripwire nudges a handoff; the session commits its WIP, writes a
   handoff file, and a fresh session resumes exactly where it left off.
+  During `implement`/`review` this repeats automatically, up to a fixed
+  hop cap of 10, so the mechanical execution-heavy phases don't need a
+  human to notice and restart every tripwire; `interview`/`ticket` always
+  stop and wait for a human, since those phases involve scope and
+  requirements judgment.
 
 ## Install
 
@@ -160,8 +165,9 @@ bound, so it has no step 0 to resolve.
 
 The tests cover the hooks (context tripwire thresholds, handoff pickup,
 lint-before-push detection), the backend resolver (`bin/sdlc-backend.sh`),
-validate every skill's frontmatter plus the ticket-backend invariants
-described under [Ticket backends](#ticket-backends), and content-check the
+the auto-continue hop-count/cap gate (`bin/sdlc-hopcount.sh`), validate
+every skill's frontmatter plus the ticket-backend invariants described
+under [Ticket backends](#ticket-backends), and content-check the
 load-bearing claims in individual skill bodies.
 
 ## Design docs
