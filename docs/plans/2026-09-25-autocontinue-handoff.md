@@ -17,7 +17,7 @@
 - No existing human-approval gate (`sdlc:ticket` dry-run, `sdlc:review` step 6 triage gate, never-merge, never-push-to-main) is weakened or bypassed (issue #34 AC, epic #33 non-goal).
 - No scheduling/watchdog and no progress/stall detection — the cap is a flat hop count, nothing more (epic #33 non-goals).
 - `hooks/context-tripwire.sh`'s thresholds and firing logic are out of scope — do not touch that file (issue #34 "Out of scope").
-- No skill's internal checklist *steps* change except `skills/handoff/SKILL.md`'s step 4 — scope is `skills/handoff/SKILL.md`, `skills/resume/SKILL.md`, `README.md`, one test file (issue #34 "Scope" + "Out of scope").
+- No skill's internal checklist *steps* change except `skills/handoff/SKILL.md`'s step 4 — scope is `skills/handoff/SKILL.md`, `skills/resume/SKILL.md`, `README.md`, one test file (issue #34 "Scope" + "Out of scope"). **Superseded by the Amendment under Task 2 below:** the user's mid-session ruling also requires a wording change to `skills/resume/SKILL.md` checklist step 1 (the disambiguation rule) — this constraint's "except step 4" carve-out should be read as "except handoff step 4 and resume step 1," not as forbidding the Task 2 amendment it coexists with in this same document.
 - Manually invoking `sdlc:handoff --continue` in any phase must be unaffected by this change (issue #34 AC).
 - Any new/modified script follows the existing `bin/*.sh` idiom: `set -u`, a `die()` that prints `<scriptname>: <msg>` to stderr, one `cmd_<name>` function per subcommand, a trailing `case` dispatcher, called by bare name (never `bin/`-prefixed) because the plugin's `bin/` directory is prepended to `PATH` (`references/backend-bind.md` explains why; `sdlc-drift.sh`/`sdlc-backend.sh` are the precedent).
 
@@ -209,7 +209,7 @@ chmod +x tests/test-hopcount.sh
 bash tests/test-hopcount.sh
 ```
 
-Expected: every `ok:` line, `passed=14 failed=0` (3 phases × 2 assertions + 4 scenarios × 2 assertions = 14), exit status 0.
+Expected: every `ok:` line, `passed=18 failed=0` (3 phases × 2 assertions + 6 scenarios × 2 assertions = 18), exit status 0.
 
 - [ ] **Step 5: Run the full existing suite to confirm no regression**
 
