@@ -61,6 +61,7 @@ the single source of truth; every pickup mechanism reads the same format.
    - Last commit: <hash> <subject>
    - Stash: <name or "none">
    - Labels set: <e.g. sdlc:in-progress on <ref>>
+   Hop: <n> of <cap>
 
    ## Next
    1. <Ordered, imperative, specific actions. "Implement the retry branch
@@ -71,15 +72,65 @@ the single source of truth; every pickup mechanism reads the same format.
    re-litigate them.>
    ```
 
+   The `Hop:` line is written WITHOUT a leading `- ` bullet, unlike its
+   neighbors — it must be `sdlc-hopcount.sh`'s exact stdout line
+   (`Hop: <n> of <cap>`) verbatim, byte-for-byte, because the script's own
+   parser on the next hop looks for a line beginning literally `Hop: `.
+   Only present when step 4's auto-continue check below fired for this
+   hop; omit the line entirely on a manually-triggered or first-ever
+   handoff.
+
 4. **Choose the continuation path:**
+   - **Find any still-present prior handoff first, regardless of which
+     path this step ends up taking.** Glob for a still-present
+     `.handoff-*.md` at the main worktree root (the same glob `sdlc:resume`
+     uses). If this session was resumed from one, that file is
+     `<prior-handoff-file>` below; if none, there is no prior file for the
+     rest of this step.
+   - **Auto-continue check — run this only when this invocation is a
+     direct response to a context-tripwire message** (the hook's
+     distinctive "Context tripwire SOFT/HARD: ..." injected text). A human
+     invoking `sdlc:handoff --continue` explicitly skips this check
+     entirely and goes straight to the manual `--continue` path below —
+     this section only automates the *unflagged* tripwire response, it
+     never overrides an explicit human flag:
+     1. Run `sdlc-hopcount.sh check <phase> [<prior-handoff-file>]` (bare
+        name — the plugin's `bin/` is on `PATH`, exactly as with
+        `sdlc-backend.sh`/`sdlc-drift.sh`; never write a `bin/`-prefixed
+        path).
+     2. **Exit `0`:** write the script's exact stdout line (`Hop: <n> of
+        <cap>`) into this handoff's `## State` section, then take the
+        `--continue` path below automatically.
+     3. **Exit `2`:** phase is `interview` or `ticket` (or unrecognized) —
+        fall through to the default end-turn path below, unchanged from
+        today. Do not write a `Hop:` line.
+     4. **Exit `1`:** the hop cap is reached — fall through to the default
+        end-turn path below, but tell the human explicitly: "Auto-continue
+        hop cap (10) reached without the phase's done condition being met;
+        handing back for a human to resume manually or investigate why
+        it's taking this long." Do not write a `Hop:` line (there is no
+        next hop).
    - **Default:** end the turn. Tell your human partner: "Handoff written
      to `<file>`. Start a fresh session in the main repo directory
      (`<main_root>`) — it will pick the handoff up automatically." (The
-     handoff-pickup SessionStart hook injects it.)
-   - **`--continue` (only if invoked with it):** dispatch ONE
-     general-purpose subagent with the prompt: "Read `<file>`
-     and continue the work per the sdlc:resume skill." Then follow the
-     supervisor rule below.
+     handoff-pickup SessionStart hook injects it.) Leave any
+     `<prior-handoff-file>` found above in place — nothing is superseding
+     it, since no continuation is happening this turn.
+   - **`--continue` (invoked with the flag explicitly, or triggered
+     automatically by the check above):** dispatch ONE general-purpose
+     subagent with the prompt: "Read `<file>` and continue the work per
+     the sdlc:resume skill." Then follow the supervisor rule below. In
+     EITHER case — the explicit human flag or the automatic trigger —
+     once `<file>` has been written successfully and a
+     `<prior-handoff-file>` was found above, delete that exact file (by
+     its known path — never a wildcard, and never any other
+     `.handoff-*.md` that happens to be present). This keeps at most one
+     handoff file alive per chain: a manual `--continue` chain that
+     skipped this would leave stale files behind just as readily as an
+     unattended auto-continue chain would, and either way a later
+     `sdlc:resume` — quite possibly a non-interactive dispatched subagent
+     that cannot answer an interactive disambiguation question — must
+     never have to pick between several live files for the same chain.
 
 ## Supervisor rule (--continue only)
 
@@ -88,6 +139,25 @@ continuation subagent, relay its final summary to the user, and dispatch
 again (with a fresh handoff file, written by the subagent) if more work
 remains. You MUST NOT edit files, run builds, or "just fix one small
 thing" yourself — that failure mode is exactly what this rule blocks.
+
+## Compaction across hops
+
+Auto-continued hops chain handoff files, one per tripwire. Each one is a
+fresh document, not an amendment of the last — do not carry forward
+stale content:
+
+- Write a **fresh** handoff each hop; do not copy-paste the prior file's
+  `## Done`/`## Next` verbatim and append.
+- Point at durable state instead of inlining it: reference the plan doc
+  path and `git log`/`git diff` ranges rather than pasting diffs or full
+  file contents into `## Done`.
+- Prune `## Gotchas` each hop — drop anything the current `## Next` no
+  longer depends on; a Gotchas section that only grows makes each
+  successive hop's file harder to trust, not easier.
+- Aim for roughly 60-80 lines total. This is a soft guideline, not a
+  hard gate — a handoff that needs more room to stay unambiguous should
+  take it — but a handoff creeping past it on every hop is a sign
+  content is being duplicated instead of pointed at.
 
 ## Red flags
 
