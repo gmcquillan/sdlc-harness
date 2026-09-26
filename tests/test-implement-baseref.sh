@@ -23,7 +23,7 @@ want "step 2 states default behavior is unchanged" \
 want "step 5 branches from the override tip when given" \
   "branch point is the override branch's tip"
 want "step 5 default stays main/master's tip" \
-  "it is\n   \`main\`/\`master\`'s tip, unchanged"
+  '`main`/`master`'"'"'s tip, unchanged'
 want "step 11 documents the --base flag addition" \
   'add `--base <branch>` to'
 want "step 11 references the gh pr create call it modifies" \
