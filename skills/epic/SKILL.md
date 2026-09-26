@@ -55,7 +55,13 @@ todo per checklist item.
      continue at step 3 with `tip=main` (or whatever base
      `sdlc:implement` step 2 resolves as this repo's default).
 
-3. **Pick.** `sdlc:next <epic-ref>`.
+3. **Pick.** Run `sdlc:next <epic-ref>` through its own Report step
+   (step 5) only, then stop — do NOT let it continue into its own
+   step 6 hand-off. That step's human confirm prompt and direct,
+   same-session `sdlc:implement` invocation are for a human running
+   `sdlc:next` standalone; this loop's own step 4 below is what
+   dispatches `implement`, with the base-ref override and fresh-
+   subagent isolation `sdlc:next` step 6 doesn't know about.
    - No ready non-ops ticket and nothing open remains under the epic at
      all → `sdlc-epicstate.sh set-status <epic-ref> done`, then go to
      step 7.

@@ -18,6 +18,12 @@
 # or hops / invalid epic ref / invalid set-status token. 1 = record
 # pushed the running hop total over the cap (state is still persisted).
 # 0 = success.
+#
+# Deliberately unlocked, unlike sdlc-backend.sh's cache: this assumes one
+# sdlc:epic run at a time per epic ref, not sdlc-backend.sh's routinely-
+# concurrent-across-worktrees usage. A second concurrent writer against
+# the same epic ref can lose an update (read-modify-write race). Add
+# locking here only if that assumption stops holding.
 set -u
 
 DEFAULT_CAP=30
@@ -64,7 +70,7 @@ read_stack() { # <file> -> the Stack section's lines, one per line, or nothing
 
 write_state() { # <file> <epic> <status> <cap> <hops> <tip> <detail-or-""> ; stack lines on stdin
   local f="$1" epic="$2" status="$3" cap="$4" hops="$5" tip="$6" detail="$7"
-  local tmpf; tmpf=$(mktemp "$(dirname "$f")/.sdlc-epic.XXXXXX") || die "cannot create temp file"
+  local tmpf; tmpf=$(mktemp "$(dirname "$f")/.sdlc-epic-XXXXXX.md") || die "cannot create temp file"
   {
     printf '# SDLC Epic State\n\n'
     printf '## Epic\n%s\n\n' "$epic"
@@ -90,7 +96,7 @@ cmd_init() {
       --cap)
         [ $# -ge 2 ] || die "init: --cap requires a value" 2
         case "$2" in ''|*[!0-9]*) die "init: --cap must be numeric" 2 ;; esac
-        cap="$2"; shift 2 ;;
+        cap=$((10#$2)); shift 2 ;;
       *) die "init: unknown flag: $1" 2 ;;
     esac
   done
@@ -106,8 +112,8 @@ cmd_status() {
   local epic status cap hops tip detail
   epic=$(read_field "$f" Epic); epic="${epic:-$ref}"
   status=$(read_field "$f" Status); status="${status:-running}"
-  cap=$(read_field "$f" Cap); case "$cap" in ''|*[!0-9]*) cap="$DEFAULT_CAP" ;; esac
-  hops=$(read_field "$f" Hops); case "$hops" in ''|*[!0-9]*) hops=0 ;; esac
+  cap=$(read_field "$f" Cap); case "$cap" in ''|*[!0-9]*) cap="$DEFAULT_CAP" ;; *) cap=$((10#$cap)) ;; esac
+  hops=$(read_field "$f" Hops); case "$hops" in ''|*[!0-9]*) hops=0 ;; *) hops=$((10#$hops)) ;; esac
   tip=$(read_field "$f" Tip); tip="${tip:-main}"
   detail=$(read_field "$f" Stopped)
   printf 'epic=%s\n' "$epic"
@@ -123,12 +129,13 @@ cmd_record() {
   [ $# -eq 5 ] || die "record requires: <epic-ref> <ticket-ref> <branch> <pr#> <hops>" 2
   local ref="$1" ticket="$2" branch="$3" pr="$4" hops_add="$5"
   case "$hops_add" in ''|*[!0-9]*) die "record: hops must be numeric" 2 ;; esac
+  hops_add=$((10#$hops_add))
   local f; f=$(state_file "$ref") || exit $?
   [ -f "$f" ] || die "record: no state file for '$ref'" 2
   local epic cap hops_cur stack_lines total status detail
   epic=$(read_field "$f" Epic); epic="${epic:-$ref}"
-  cap=$(read_field "$f" Cap); case "$cap" in ''|*[!0-9]*) cap="$DEFAULT_CAP" ;; esac
-  hops_cur=$(read_field "$f" Hops); case "$hops_cur" in ''|*[!0-9]*) hops_cur=0 ;; esac
+  cap=$(read_field "$f" Cap); case "$cap" in ''|*[!0-9]*) cap="$DEFAULT_CAP" ;; *) cap=$((10#$cap)) ;; esac
+  hops_cur=$(read_field "$f" Hops); case "$hops_cur" in ''|*[!0-9]*) hops_cur=0 ;; *) hops_cur=$((10#$hops_cur)) ;; esac
   stack_lines=$(read_stack "$f")
   total=$((hops_cur + hops_add))
   if [ "$total" -gt "$cap" ]; then
@@ -140,7 +147,7 @@ cmd_record() {
     printf '%s %s %s %s\n' "$ticket" "$branch" "$pr" "$hops_add"
   } | write_state "$f" "$epic" "$status" "$cap" "$total" "$branch" "$detail"
   [ "$status" = "stopped:hop-cap" ] && exit 1
-  printf 'Hops: %d of %d\n' "$total" "$cap"
+  printf 'Hops: %s of %s\n' "$total" "$cap"
 }
 
 cmd_set_status() {
@@ -154,8 +161,8 @@ cmd_set_status() {
   [ -f "$f" ] || die "set-status: no state file for '$ref'" 2
   local epic cap hops tip stack_lines
   epic=$(read_field "$f" Epic); epic="${epic:-$ref}"
-  cap=$(read_field "$f" Cap); case "$cap" in ''|*[!0-9]*) cap="$DEFAULT_CAP" ;; esac
-  hops=$(read_field "$f" Hops); case "$hops" in ''|*[!0-9]*) hops=0 ;; esac
+  cap=$(read_field "$f" Cap); case "$cap" in ''|*[!0-9]*) cap="$DEFAULT_CAP" ;; *) cap=$((10#$cap)) ;; esac
+  hops=$(read_field "$f" Hops); case "$hops" in ''|*[!0-9]*) hops=0 ;; *) hops=$((10#$hops)) ;; esac
   tip=$(read_field "$f" Tip); tip="${tip:-main}"
   stack_lines=$(read_stack "$f")
   { [ -n "$stack_lines" ] && printf '%s\n' "$stack_lines"; } | write_state "$f" "$epic" "$status" "$cap" "$hops" "$tip" "$detail"

@@ -110,5 +110,27 @@ eq "0" "$RC" "record with the bare ref hits the file '#123' created"
 [ -f "$repo/.sdlc-epic-123.md" ] && ok "leading # and bare ref share one file" \
   || bad "leading # and bare ref share one file"
 
+# --- leading-zero numeric input must not be misread as octal ---------------
+run init 500 --cap 009
+eq "0" "$RC" "init with a leading-zero --cap exits 0"
+run status 500
+eq "9" "$(field cap)" "leading-zero --cap 009 is read back as decimal 9, not octal"
+
+run record 500 t1 sdlc/500-t1 1 008
+eq "0" "$RC" "record with a leading-zero hops argument exits 0"
+eq "Hops: 8 of 9" "$OUT" "leading-zero hops 008 is summed as decimal 8, not octal"
+
+# --- write_state's temp file matches the .sdlc-epic-*.md gitignore glob ----
+# A leftover temp file from an interrupted write (killed between mktemp and
+# mv) must be covered by the same glob as the real state file, or it
+# pollutes `git status` instead of being silently ignored like the rest of
+# this feature's state. Check write_state's actual mktemp call in the
+# script source (not a copy of it here) so this fails if it regresses.
+if grep -F 'mktemp "$(dirname "$f")/.sdlc-epic-XXXXXX.md"' "$SUT" >/dev/null; then
+  ok "write_state's temp-file template matches the .sdlc-epic-*.md glob"
+else
+  bad "write_state's temp-file template matches the .sdlc-epic-*.md glob"
+fi
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

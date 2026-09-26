@@ -25,6 +25,8 @@ want "resume step verifies the tip branch against git reality" \
   'does the recorded `tip=` branch exist'
 want "resume step defers to sdlc:resume for a live handoff file" \
   "do not touch this loop until that ticket's"
+want "pick step stops before sdlc:next's own hand-off" \
+  "do NOT let it continue into its own"
 reject "no direct merge command leaked into the skill" 'gh pr merge'
 
 echo "passed=$pass failed=$fail"
