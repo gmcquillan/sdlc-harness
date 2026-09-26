@@ -23,7 +23,12 @@ per checklist item.
    (c) unblocked — every ref under its `## Depends on` heading is
    CLOSED (`gh issue view <ref> --json state`; that section writes GitHub
    refs as `#123`, so pass them bare). No candidate → report why
-   each open task is blocked and stop.
+   each open task is blocked and stop. (`sdlc:epic` relies on a
+   same-epic in-review relaxation to the CLOSED requirement — see
+   `skills/next/SKILL.md`'s Ready section — but that only applies to
+   `sdlc:next`'s own recommendation; this auto-pick path always requires
+   CLOSED, since `sdlc:epic` never reaches it — it always passes an
+   explicit ref.)
 2. **Preconditions:** clean `git status`; `gh auth status` succeeds.
    Either failure → stop and report. Then **sync the base branch with
    origin BEFORE any scouting or worktree** (steps 4–5): `git fetch
