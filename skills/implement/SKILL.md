@@ -23,14 +23,29 @@ per checklist item.
    (c) unblocked — every ref under its `## Depends on` heading is
    CLOSED (`gh issue view <ref> --json state`; that section writes GitHub
    refs as `#123`, so pass them bare). No candidate → report why
-   each open task is blocked and stop.
+   each open task is blocked and stop. (`sdlc:epic` relies on a
+   same-epic in-review relaxation to the CLOSED requirement — see
+   `skills/next/SKILL.md`'s Ready section — but that only applies to
+   `sdlc:next`'s own recommendation; this auto-pick path always requires
+   CLOSED, since `sdlc:epic` never reaches it — it always passes an
+   explicit ref.)
 2. **Preconditions:** clean `git status`; `gh auth status` succeeds.
    Either failure → stop and report. Then **sync the base branch with
    origin BEFORE any scouting or worktree** (steps 4–5): `git fetch
-   origin` and fast-forward the local base (`main`/`master`) to
-   `origin/<base>`. If the local base has diverged (non-fast-forward) →
-   stop and report rather than force anything. The worktree in step 5
-   MUST branch from this freshly-synced base.
+   origin` and fast-forward the local base (`main`/`master`, or the
+   `--base-ref <branch>` override if one was passed at invocation — see
+   below) to `origin/<base>`. If the local base has diverged
+   (non-fast-forward) → stop and report rather than force anything. If
+   `<branch>` does not exist locally or on `origin` →
+   stop and report exactly like a diverged base; never fall back to
+   `main`/`master` silently. The worktree in step 5 MUST branch from
+   this freshly-synced base.
+
+   **Base-ref override (additive, opt-in):** `sdlc:implement <ref>
+   --base-ref <branch>` syncs and branches against `<branch>` instead
+   of `main`/`master` — used by `sdlc:epic` to stack one ticket's PR on
+   the previous ticket's branch. Invoked without `--base-ref`, this
+   step's behavior is unchanged from the paragraph above.
 3. **Claim it** (prevents double pickup by parallel sessions):
    `gh issue edit <n> --add-label "sdlc:in-progress" --add-assignee "@me"`
 4. **Understand.** Read the issue body — it is self-contained; there is no
@@ -40,8 +55,11 @@ per checklist item.
    Do NOT read the subsystem file-by-file yourself. If
    `docs/domain/glossary.md` exists, read it and bind its canonical terms.
 5. **Isolate.** Invoke `superpowers:using-git-worktrees`; branch
-   `sdlc/<ref>-<slug>` (slug = kebab-cased ticket title, ≤5 words) — so
-   `sdlc/42-add-widget` or `sdlc/PROJ-123-add-widget`.
+   `sdlc/<ref>-<slug>` (slug = kebab-cased ticket title, ≤5 words) from
+   step 2's synced base — so `sdlc/42-add-widget` or
+   `sdlc/PROJ-123-add-widget`. With a `--base-ref` override, the
+   branch point is the override branch's tip; without one, it is
+   `main`/`master`'s tip, unchanged.
 6. **Plan.** Invoke `superpowers:writing-plans` for a per-issue plan
    scoped to the acceptance criteria; save under `docs/plans/` and COMMIT
    it to the branch — plans must survive handoffs and session death.
@@ -63,7 +81,10 @@ per checklist item.
     substitute — running lint here surfaces failures in-loop instead of
     as a blocked push. The same gate applies to any later push that
     fixes CI on the open PR.
-11. **Deliver.**
+11. **Deliver.** With a `--base-ref` override, add `--base <branch>` to
+    the `gh pr create` call below so the PR's diff is only this
+    ticket's incremental change against the stack tip; without an
+    override, the command below is unchanged.
 
     ```bash
     git push -u origin "sdlc/<ref>-<slug>"

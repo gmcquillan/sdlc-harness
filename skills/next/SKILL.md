@@ -23,13 +23,23 @@ but bare when passed to `gh` — and `PROJ-123` on JIRA.
   Closed tickets are already done and are NOT counted.
 - **Leverage(X)** = count of distinct open dependents of X.
 
-## Ready (must match `sdlc:implement` step 1)
+## Ready (must match `sdlc:implement` step 1, except the epic-scoped
+relaxation in test 3 below — `sdlc:epic` always hands `implement` an
+explicit ref, so `implement` step 1's own auto-pick path never runs
+during an epic loop and doesn't need to match this exception)
 
 A ticket is **ready** iff:
 
 1. Not labeled `sdlc:in-progress` or `sdlc:in-review`, AND
 2. Unassigned, AND
-3. Every ref under its `## Depends on` heading is CLOSED.
+3. Every ref under its `## Depends on` heading is CLOSED — OR, in the
+   scoped form `sdlc:next <epic-ref>` only, is one of this epic's own
+   children (already in the scoped node set from step 2) AND is
+   labeled `sdlc:in-review`. `sdlc:epic` never merges mid-stack, so a
+   same-epic prerequisite reaching `sdlc:in-review` (its PR is open,
+   built, and bot-reviewed) is as done as this loop can require before
+   the human's eventual stack-wide approval — requiring CLOSED here
+   would mean an epic could never build past its first ticket.
 
 Only ready tickets are ever recommended — so `implement` never rejects
 the pick. Non-ready tickets still count toward others' dependents and
@@ -117,7 +127,9 @@ appear as context, but are never the recommendation.
 ## Red flags
 
 - Recommending a ticket that isn't ready → `implement` will reject it;
-  the readiness test MUST match `sdlc:implement` step 1 exactly.
+  the readiness test MUST match `sdlc:implement` step 1 exactly, except
+  the epic-scoped in-review relaxation, which only `sdlc:epic` relies
+  on via its always-explicit ref hand-off.
 - Reading full issue bodies in the main loop → that is the scout's job;
   the main loop only needs the adjacency list.
 - Counting closed tickets as dependents → inflates leverage with work
