@@ -23,6 +23,8 @@ want "step 7 states which upstream mechanics stay unchanged" \
   'fix-round numbering, model selection, ledger format'
 want "red flags points at reviewer-dispatch's own red flags" \
   "reviewer-dispatch.md\`'s own Red Flags"
+want "step 9's self-review is in scope of the same override" \
+  "step 9's separate self-review dispatch"
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

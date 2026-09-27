@@ -74,9 +74,11 @@ per checklist item.
    `superpowers:subagent-driven-development` or
    `superpowers:requesting-code-review` calls for a reviewer-subagent
    dispatch — initial task review, each scoped re-review, the final
-   whole-branch review — use `references/reviewer-dispatch.md` instead
-   of that skill's own dispatch step. Everything else about the invoked
-   skill (fix-round numbering, model selection, ledger format) is
+   whole-branch review, that same Final Review's own scoped re-review
+   of the fix wave, and step 9's separate self-review dispatch below
+   — use `references/reviewer-dispatch.md` instead of that skill's
+   own dispatch step. Everything else about the invoked skill
+   (fix-round numbering, model selection, ledger format) is
    unchanged.
 8. **Verify.** Invoke `superpowers:verification-before-completion`.
    Run full test suites in a subagent that returns a pass/fail summary
@@ -84,7 +86,9 @@ per checklist item.
    context. Every acceptance criterion needs evidence.
 9. **Self-review.** Invoke `superpowers:requesting-code-review` on the
    branch diff; fix findings before delivery (verify each finding
-   technically first — no performative agreement).
+   technically first — no performative agreement). This dispatch is in
+   scope of step 7's reviewer-dispatch override too — see
+   `references/reviewer-dispatch.md`.
 10. **Lint.** Run the project's linter/formatter and fix every finding
     before pushing. The `lint-before-push` hook is a backstop, not a
     substitute — running lint here surfaces failures in-loop instead of

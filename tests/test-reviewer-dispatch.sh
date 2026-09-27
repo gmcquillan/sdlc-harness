@@ -34,6 +34,12 @@ want "site 3 fallback reports via the final summary, not the ledger" \
   "note the fallback in the final summary to the human"
 want "site 3 fallback uses the broader code-reviewer.md rubric" \
   "a broader rubric than sites 1"
+want "site 3 covers Final Review's own scoped re-review, not just the whole-branch review" \
+  "its own single scoped re-review of the fix wave"
+want "site 3 covers step 9's separate self-review dispatch" \
+  "step 9's separate self-review dispatch"
+want "late output is always read, findings folded in rather than discarded or blindly deferred to" \
+  "Read it. If it raises findings the controller's own review missed"
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
