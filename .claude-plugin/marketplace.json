@@ -13,7 +13,7 @@
       "name": "sdlc",
       "source": "./",
       "description": "Human-gated SDLC pipeline: interview, ticket, implement, next, review, fixes, handoff, resume, cleanup — with a 250k context tripwire, phase-aware auto-continue, and a lint-before-push gate.",
-      "version": "0.9.2",
+      "version": "0.9.3",
       "strict": true
     }
   ]
