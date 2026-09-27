@@ -31,6 +31,12 @@ want "cap trigger fires on the round count alone, fixes-sufficient-or-not" \
   'do NOT re-enter step 2, regardless of'
 want "cap-out comment marks round 3's fixes as unverified, not confirmed-clean" \
   'pushed but not re-verified'
+want "checklist checks for a prior cap-out comment before assuming round 1" \
+  'do NOT silently start counting from round 1'
+want "step 1 now fetches PR comments, not just the original four fields" \
+  'title,body,headRefName,files,comments'
+want "closing line is explicitly scoped away from the cap-out path" \
+  'supersedes this closing line'
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

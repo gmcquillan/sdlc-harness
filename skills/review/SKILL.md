@@ -14,12 +14,13 @@ verdicts, and judgment. Create a todo per checklist item.
    continue below unchanged; on `use-jira` read and follow the plugin's
    `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Gather metadata (main loop, small):**
-   `gh pr view <PR#> --json title,body,headRefName,files` — extract the
-   linked ticket ref from the PR body — on GitHub the bare `<n>` of
+   `gh pr view <PR#> --json title,body,headRefName,files,comments` — extract
+   the linked ticket ref from the PR body — on GitHub the bare `<n>` of
    `Closes #<n>` — then `gh issue view <n> --json body` for the
    acceptance criteria and spec pointer. Do NOT fetch the diff into this
    context. If `docs/domain/glossary.md` exists, read it and bind its
-   canonical terms.
+   canonical terms. The `comments` field is what step 6's round cap uses to
+   detect a prior cap-out — see below.
 2. **Fan out reviewers** per `fable-harness:fan-out` — three subagents,
    ALL dispatched in a single message, each given the PR number, the
    acceptance criteria, and ONE dimension:
@@ -93,6 +94,17 @@ verdicts, and judgment. Create a todo per checklist item.
    the *re-entry to step 2* that would start a round 4 (see the Tier A
    bullet below).
 
+   **Cross-invocation persistence.** This checklist keeps no state file of
+   its own (out of scope per issue #38) — GitHub's own PR comment thread,
+   already fetched in step 1 (`gh pr view <PR#> --json comments`), is the
+   durable record instead. Before treating this invocation as round 1,
+   check those comments for one containing the literal string
+   `stopped:review-round-cap`. If one exists, this PR already hit the round
+   cap on a prior invocation (or was interrupted mid-loop):
+   do NOT silently start counting from round 1 — stop immediately, tell
+   the human this PR already capped out on a prior invocation, and require
+   their explicit confirmation before running any fresh rounds.
+
    **Triage.** Sort each *confirmed* finding (survived the skeptic step)
    into one tier:
    - **Tier A — fix now:** a bounded edit to files already in the diff (or
@@ -159,7 +171,12 @@ verdicts, and judgment. Create a todo per checklist item.
      `/sdlc:implement <ref>` in a fresh session. Do NOT patch the branch.
 
    Report what was fixed, the URLs of any tickets created, and any redo
-   recommendation.
+   recommendation — this closing line applies to the Tier A (non-cap-out),
+   Tier B, and Tier C paths. On the cap-out path (the round-3 branch inside
+   the Tier A bullet above), that branch's own report instruction
+   (`stopped:review-round-cap` plus the round count and remaining findings)
+   IS the final report and supersedes this closing line — it is not
+   supplemented by it.
 
 ## Red flags
 
