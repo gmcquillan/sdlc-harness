@@ -1,6 +1,6 @@
 ---
 name: epic
-description: Use when a GitHub epic's open tickets should be built unattended as one stacked PR chain instead of ticket-by-ticket — loops sdlc:next (pick) → sdlc:implement with a base-ref override (build) → sdlc:review with its Tier A auto-fix loop (review) against a durable, gitignored per-epic state file, stopping on a Tier B/C finding, an epic-wide hop cap, or an empty frontier. Never merges. Invoke as sdlc:epic <epic-ref>.
+description: Use when a GitHub epic's open tickets should be built unattended as one stacked PR chain instead of ticket-by-ticket — loops sdlc:next (pick) → sdlc:implement with a base-ref override (build) → sdlc:review with its Tier A auto-fix loop (review) against a durable, gitignored per-epic state file, stopping on a Tier B/C finding, a review round cap, an epic-wide hop cap, or an empty frontier. Never merges. Invoke as sdlc:epic <epic-ref>.
 ---
 
 # SDLC Epic (autopilot)
@@ -83,17 +83,27 @@ todo per checklist item.
      `sdlc:epic` invocation. Stop this turn.
 
 5. **Review.** Dispatch ONE fresh subagent: "Run `sdlc:review` on PR
-   `<pr#>` at effort `medium`, including its Tier A auto-fix loop; if a
-   Tier B or C finding comes back, do NOT fix it — report it and stop."
-   `sdlc:review`'s own gate (human go-ahead before any Tier A fix lands)
-   still applies unchanged inside that subagent; this loop does not
-   bypass it.
+   `<pr#>` at effort `medium`, including its Tier A auto-fix loop.
+   Tier A fixes are pre-authorized in this unattended context — treat
+   step 6's triage gate as satisfied for every Tier A finding without
+   waiting for a human go-ahead. Tier B or C still must not be auto-fixed
+   — report them and stop instead." This is the one place this loop
+   bypasses `sdlc:review`'s own human-gate default, and only for Tier A;
+   Tier B/C always still hits a hard stop below.
    - Resolved (approved outright, or Tier-A-fixed to approval) →
      continue at step 6.
    - Any Tier B/C finding → `sdlc-epicstate.sh set-status <epic-ref>
      stopped:review-tier-b-c "<ticket-ref> <pr#> <one-line finding
      summary>"`. Stop; tell the human which PR and finding to resolve
      before resuming.
+   - The subagent reports `stopped:review-round-cap` (the round cap was hit
+     inside `sdlc:review`'s own Tier A loop — see that skill's step 6) →
+     `sdlc-epicstate.sh set-status <epic-ref> stopped:review-round-cap
+     "<ticket-ref> <pr#> <round count and remaining findings from the
+     subagent's report>"`. Stop; tell the human this PR capped out at 3
+     review rounds inside the subagent and needs its own fresh,
+     human-confirmed `sdlc:review` invocation (per that skill's
+     cross-invocation-persistence check) before this loop can resume.
 
 6. **Record.** `sdlc-epicstate.sh record <epic-ref> <ticket-ref>
    <branch> <pr#> <hops>`.
@@ -104,8 +114,8 @@ todo per checklist item.
      Stop; tell the human the partial stack and which ticket to resume
      from.
 
-7. **Finish.** Any stop above (done, blocked, Tier B/C, hop cap) ends
-   the run. On a clean "done" finish, post one summary comment on the
+7. **Finish.** Any stop above (done, blocked, Tier B/C, round cap, hop cap)
+   ends the run. On a clean "done" finish, post one summary comment on the
    epic issue: the full stack in order (ticket → branch → PR#, from
    `sdlc-epicstate.sh status <epic-ref>`'s `stack=` lines), and tell the
    human it's ready for review starting with the bottom PR.
@@ -123,6 +133,11 @@ todo per checklist item.
   design requires a hard stop; resuming after a human resolves it
   re-checks readiness from step 3 rather than skipping back into
   step 4/5.
+- Treating a `stopped:review-round-cap` stop as retry-and-continue →
+  like Tier B/C, this is a hard stop; `sdlc:review`'s own round-cap
+  gotcha requires explicit human confirmation before any fresh
+  `sdlc:review` re-invocation on that PR, and this loop must not
+  auto-resume step 5 for that ticket without it.
 - Special-casing a diamond-shaped epic dependency graph → always
   linearize via `sdlc:next`'s existing ranking, even at a genuine fork.
 - Merging any PR in the stack, ever → that's always the human's call,

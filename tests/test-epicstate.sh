@@ -96,6 +96,14 @@ eq "2" "$RC" "set-status rejects 'running' (owned only by record/init)"
 run set-status 100 bogus-status
 eq "2" "$RC" "set-status with an unrecognized token exits 2"
 
+run set-status 100 stopped:review-round-cap "39 41 round cap hit"
+eq "0" "$RC" "set-status accepts stopped:review-round-cap"
+run status 100
+eq "stopped:review-round-cap" "$(field status)" \
+  "set-status records stopped:review-round-cap as the status"
+eq "39 41 round cap hit" "$(field stopped_detail)" \
+  "set-status records the round-cap detail"
+
 # --- unknown epic: status/record/set-status all exit 2 ---------------------
 run status 999
 eq "2" "$RC" "status on an unknown epic exits 2"
