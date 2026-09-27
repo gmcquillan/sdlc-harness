@@ -10,7 +10,8 @@
 #                               tip, sum hops against the cap
 #   set-status <epic-ref> <status> [detail]
 #                               closed vocabulary: done |
-#                               stopped:review-tier-b-c | stopped:blocked
+#                               stopped:review-tier-b-c |
+#                               stopped:review-round-cap | stopped:blocked
 #   status <epic-ref>          print the current state, parseable
 #
 # Exit codes: 3 = not inside a git worktree. 2 = usage error / unknown
@@ -154,8 +155,8 @@ cmd_set_status() {
   local ref="${1:-}" status="${2:-}" detail="${3:-}"
   [ -n "$ref" ] && [ -n "$status" ] || die "set-status requires: <epic-ref> <status> [detail]" 2
   case "$status" in
-    done|stopped:review-tier-b-c|stopped:blocked) ;;
-    *) die "set-status: status must be done, stopped:review-tier-b-c, or stopped:blocked" 2 ;;
+    done|stopped:review-tier-b-c|stopped:review-round-cap|stopped:blocked) ;;
+    *) die "set-status: status must be done, stopped:review-tier-b-c, stopped:review-round-cap, or stopped:blocked" 2 ;;
   esac
   local f; f=$(state_file "$ref") || exit $?
   [ -f "$f" ] || die "set-status: no state file for '$ref'" 2
