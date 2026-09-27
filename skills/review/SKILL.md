@@ -86,6 +86,13 @@ verdicts, and judgment. Create a todo per checklist item.
    review).** Triage → gate → act. Every fix runs in a sub-agent; the main
    loop never edits files itself, no matter how small the change.
 
+   **Round cap.** Round 1 is this checklist's initial pass (step 1 through
+   this step, the first time it runs for this PR); each re-entry to step 2
+   below starts a new round. Cap = 3 rounds. Round 3's Tier A fixes still
+   get made and pushed exactly as any other round's — the cap only blocks
+   the *re-entry to step 2* that would start a round 4 (see the Tier A
+   bullet below).
+
    **Triage.** Sort each *confirmed* finding (survived the skeptic step)
    into one tier:
    - **Tier A — fix now:** a bounded edit to files already in the diff (or
@@ -109,8 +116,19 @@ verdicts, and judgment. Create a todo per checklist item.
      ONE fresh sub-agent per fix (or a small batched set) running
      `superpowers:receiving-code-review` + `superpowers:test-driven-development`.
      The main loop supervises only. When fixes land and lint passes, push the
-     branch (`git push`) so the updated PR is what step 2 re-reviews, then
-     re-run this checklist from step 2.
+     branch (`git push`) so the updated PR is what step 2 re-reviews.
+
+     Check the round counter before re-entering step 2: below the cap (this
+     was round 1 or round 2) → re-run this checklist from step 2, exactly as
+     before. At the cap (this was round 3, and confirmed findings are still
+     outstanding after round 3's fixes) → do NOT re-enter step 2. Instead
+     `gh pr comment <PR#> --body "<summary of every fix applied across all
+     three rounds, plus every confirmed finding still outstanding>"` —
+     never `--approve` or `--request-changes` for this path, since the
+     review itself was never re-run past the cap to justify a verdict —
+     then report `stopped:review-round-cap` back to whatever invoked this
+     checklist, along with the round count (3) and the list of remaining
+     findings.
    - **Tier B:** resolve the epic from the reviewed issue's `## Epic`
      section (the ref under that heading), then create a child issue in
      the same section format `sdlc:task` issues use, so `sdlc:next` /
@@ -157,3 +175,6 @@ verdicts, and judgment. Create a todo per checklist item.
 - Running the drift check with no glossary present, or letting a drift
   hit block approval → the check is advisory and the default path must
   stay free.
+- Re-entering step 2 after round 3's fixes land → the cap exists precisely
+  to stop this; post the summary comment and report
+  `stopped:review-round-cap` instead.
