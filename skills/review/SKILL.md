@@ -14,12 +14,13 @@ verdicts, and judgment. Create a todo per checklist item.
    continue below unchanged; on `use-jira` read and follow the plugin's
    `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Gather metadata (main loop, small):**
-   `gh pr view <PR#> --json title,body,headRefName,files` — extract the
-   linked ticket ref from the PR body — on GitHub the bare `<n>` of
+   `gh pr view <PR#> --json title,body,headRefName,files,comments` — extract
+   the linked ticket ref from the PR body — on GitHub the bare `<n>` of
    `Closes #<n>` — then `gh issue view <n> --json body` for the
    acceptance criteria and spec pointer. Do NOT fetch the diff into this
    context. If `docs/domain/glossary.md` exists, read it and bind its
-   canonical terms.
+   canonical terms. The `comments` field is what step 6's round cap uses to
+   detect a prior cap-out — see below.
 2. **Fan out reviewers** per `fable-harness:fan-out` — three subagents,
    ALL dispatched in a single message, each given the PR number, the
    acceptance criteria, and ONE dimension:
@@ -86,6 +87,24 @@ verdicts, and judgment. Create a todo per checklist item.
    review).** Triage → gate → act. Every fix runs in a sub-agent; the main
    loop never edits files itself, no matter how small the change.
 
+   **Round cap.** Round 1 is this checklist's initial pass (step 1 through
+   this step, the first time it runs for this PR); each re-entry to step 2
+   below starts a new round. Cap = 3 rounds. Round 3's Tier A fixes still
+   get made and pushed exactly as any other round's — the cap only blocks
+   the *re-entry to step 2* that would start a round 4 (see the Tier A
+   bullet below).
+
+   **Cross-invocation persistence.** This checklist keeps no state file of
+   its own (out of scope per issue #38) — GitHub's own PR comment thread,
+   already fetched in step 1 (`gh pr view <PR#> --json comments`), is the
+   durable record instead. Before treating this invocation as round 1,
+   check those comments for one containing the literal string
+   `stopped:review-round-cap`. If one exists, this PR already hit the round
+   cap on a prior invocation (or was interrupted mid-loop):
+   do NOT silently start counting from round 1 — stop immediately, tell
+   the human this PR already capped out on a prior invocation, and require
+   their explicit confirmation before running any fresh rounds.
+
    **Triage.** Sort each *confirmed* finding (survived the skeptic step)
    into one tier:
    - **Tier A — fix now:** a bounded edit to files already in the diff (or
@@ -109,8 +128,21 @@ verdicts, and judgment. Create a todo per checklist item.
      ONE fresh sub-agent per fix (or a small batched set) running
      `superpowers:receiving-code-review` + `superpowers:test-driven-development`.
      The main loop supervises only. When fixes land and lint passes, push the
-     branch (`git push`) so the updated PR is what step 2 re-reviews, then
-     re-run this checklist from step 2.
+     branch (`git push`) so the updated PR is what step 2 re-reviews.
+
+     Check the round counter before re-entering step 2: below the cap (this
+     was round 1 or round 2) → re-run this checklist from step 2, as normal.
+     At the cap (this was round 3) → do NOT re-enter step 2, regardless of
+     whether round 3's fixes look sufficient: confirming that would take
+     the very round-4 re-review the cap forbids. Instead `gh pr comment <PR#>
+     --body "<summary of every fix applied across all three rounds —
+     mark round 3's as pushed but not re-verified — plus every confirmed
+     finding that was never fixed: Tier B tickets, a Tier C recommendation,
+     or a Tier A fix the gate declined>"` — never `--approve` or
+     `--request-changes` for this path, since the review itself was never
+     re-run past the cap to justify a verdict — then report
+     `stopped:review-round-cap` back to whatever invoked this checklist,
+     along with the round count (3) and the list of remaining findings.
    - **Tier B:** resolve the epic from the reviewed issue's `## Epic`
      section (the ref under that heading), then create a child issue in
      the same section format `sdlc:task` issues use, so `sdlc:next` /
@@ -139,7 +171,12 @@ verdicts, and judgment. Create a todo per checklist item.
      `/sdlc:implement <ref>` in a fresh session. Do NOT patch the branch.
 
    Report what was fixed, the URLs of any tickets created, and any redo
-   recommendation.
+   recommendation — this closing line applies to the Tier A (non-cap-out),
+   Tier B, and Tier C paths. On the cap-out path (the round-3 branch inside
+   the Tier A bullet above), that branch's own report instruction
+   (`stopped:review-round-cap` plus the round count and remaining findings)
+   IS the final report and supersedes this closing line — it is not
+   supplemented by it.
 
 ## Red flags
 
@@ -157,3 +194,6 @@ verdicts, and judgment. Create a todo per checklist item.
 - Running the drift check with no glossary present, or letting a drift
   hit block approval → the check is advisory and the default path must
   stay free.
+- Re-entering step 2 after round 3's fixes land → the cap exists precisely
+  to stop this; post the summary comment and report
+  `stopped:review-round-cap` instead.
