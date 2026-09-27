@@ -25,6 +25,12 @@ want "cap-out explicitly forbids approve/request-changes" 'never `--approve` or'
 want "red flag documents re-entering step 2 past the cap" \
   'Re-entering step 2 after round 3'
 reject "old unconditional re-entry phrasing is gone" 'step 2 re-reviews, then'
+reject "cap trigger is not gated on an unverifiable re-check of round 3's fixes" \
+  'confirmed findings are still'
+want "cap trigger fires on the round count alone, fixes-sufficient-or-not" \
+  'do NOT re-enter step 2, regardless of'
+want "cap-out comment marks round 3's fixes as unverified, not confirmed-clean" \
+  'pushed but not re-verified'
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
