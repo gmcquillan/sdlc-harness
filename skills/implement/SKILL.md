@@ -69,6 +69,24 @@ per checklist item.
    Fall back to inline `superpowers:executing-plans` ONLY when tasks are
    so tightly coupled that per-task subagent setup exceeds the benefit —
    and say so explicitly.
+
+   **Reviewer-dispatch stall cap (override, additive):**
+   `subagent-driven-development`'s fix-round cap only fires once a
+   task-reviewer has returned findings — it does not cover a
+   task-reviewer dispatch that never returns anything at all. Treat a
+   dispatch as stalled once its own bounded 5–10 minute wait has elapsed
+   with no output and no ListAgents-visible progress, AND a direct
+   status-check nudge to that subagent goes unanswered. Cap stalled
+   task-reviewer dispatch attempts at 2 per task — upstream of, and
+   independent from, the fix-round cap. On the 2nd stalled attempt, do
+   not dispatch a 3rd task-reviewer subagent: perform the task review
+   yourself in this session instead, reading the same brief, implementer
+   report, and review package a subagent would have received, and
+   applying the task-reviewer template's own rubric. Append `Task <N>:
+   reviewer-stall-fallback (2 stalled dispatch attempts, controller
+   reviewed directly)` to the ledger so this fallback is visible rather
+   than silent, then continue the task loop from wherever that direct
+   review lands it (clean → complete; findings → the normal fix loop).
 8. **Verify.** Invoke `superpowers:verification-before-completion`.
    Run full test suites in a subagent that returns a pass/fail summary
    plus failures verbatim — never page raw test logs through this
@@ -113,3 +131,7 @@ everything; a mid-issue split is survivable by design.
 - Reading file-after-file in step 4 → that is the scouts' job.
 - Skipping the claim in step 3 → two sessions build the same issue.
 - "Tests probably pass" in step 8 → evidence before assertions, always.
+- Dispatching a 3rd task-reviewer subagent after 2 stalled attempts
+  instead of falling back to a direct controller review in step 7 → the
+  stall cap exists precisely to stop that; a 3rd dispatch just burns
+  another 9–40+ minutes for the same zero output.
