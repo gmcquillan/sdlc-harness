@@ -39,6 +39,10 @@ want "round-cap branch calls set-status with the matching token" \
   'set-status <epic-ref> stopped:review-round-cap'
 want "red flag warns against retry-and-continue past a round-cap stop" \
   'Treating a `stopped:review-round-cap` stop as retry-and-continue'
+want "step 7's stop list includes round cap alongside the other stops" \
+  'Any stop above (done, blocked, Tier B/C, round cap, hop cap)'
+want "frontmatter description lists round cap among the stop conditions" \
+  'a review round cap'
 
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]

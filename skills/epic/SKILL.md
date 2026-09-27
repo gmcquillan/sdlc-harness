@@ -1,6 +1,6 @@
 ---
 name: epic
-description: Use when a GitHub epic's open tickets should be built unattended as one stacked PR chain instead of ticket-by-ticket — loops sdlc:next (pick) → sdlc:implement with a base-ref override (build) → sdlc:review with its Tier A auto-fix loop (review) against a durable, gitignored per-epic state file, stopping on a Tier B/C finding, an epic-wide hop cap, or an empty frontier. Never merges. Invoke as sdlc:epic <epic-ref>.
+description: Use when a GitHub epic's open tickets should be built unattended as one stacked PR chain instead of ticket-by-ticket — loops sdlc:next (pick) → sdlc:implement with a base-ref override (build) → sdlc:review with its Tier A auto-fix loop (review) against a durable, gitignored per-epic state file, stopping on a Tier B/C finding, a review round cap, an epic-wide hop cap, or an empty frontier. Never merges. Invoke as sdlc:epic <epic-ref>.
 ---
 
 # SDLC Epic (autopilot)
@@ -114,8 +114,8 @@ todo per checklist item.
      Stop; tell the human the partial stack and which ticket to resume
      from.
 
-7. **Finish.** Any stop above (done, blocked, Tier B/C, hop cap) ends
-   the run. On a clean "done" finish, post one summary comment on the
+7. **Finish.** Any stop above (done, blocked, Tier B/C, round cap, hop cap)
+   ends the run. On a clean "done" finish, post one summary comment on the
    epic issue: the full stack in order (ticket → branch → PR#, from
    `sdlc-epicstate.sh status <epic-ref>`'s `stack=` lines), and tell the
    human it's ready for review starting with the bottom PR.
