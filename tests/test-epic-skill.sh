@@ -29,5 +29,16 @@ want "pick step stops before sdlc:next's own hand-off" \
   "do NOT let it continue into its own"
 reject "no direct merge command leaked into the skill" 'gh pr merge'
 
+want "step 5 pre-authorizes Tier A fixes for the unattended subagent" \
+  'Tier A fixes are pre-authorized'
+want "step 5 still requires Tier B/C to stop, not auto-fix" \
+  'Tier B or C still must not be auto-fixed'
+want "step 5 gains a round-cap outcome branch" \
+  'stopped:review-round-cap` (the round cap was hit'
+want "round-cap branch calls set-status with the matching token" \
+  'set-status <epic-ref> stopped:review-round-cap'
+want "red flag warns against retry-and-continue past a round-cap stop" \
+  'Treating a `stopped:review-round-cap` stop as retry-and-continue'
+
 echo "passed=$pass failed=$fail"
 [ "$fail" -eq 0 ]
