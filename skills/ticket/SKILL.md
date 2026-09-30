@@ -11,7 +11,7 @@ Pure translation plus `gh` calls. Create a todo per checklist item.
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
    continue below unchanged; on `use-jira` read and follow the plugin's
-   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
+   `../../references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Preconditions:** `gh auth status` succeeds (else stop; tell the user
    to run `! gh auth login`). The spec path argument exists and contains
    a `## Decomposition` section (else stop and say what is missing —

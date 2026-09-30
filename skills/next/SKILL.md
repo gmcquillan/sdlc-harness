@@ -49,7 +49,7 @@ appear as context, but are never the recommendation.
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
    continue below unchanged; on `use-jira` read and follow the plugin's
-   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
+   `../../references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Preconditions:** `gh auth status` succeeds (else stop; tell the user
    to run `! gh auth login`).
 2. **Gather (subagent).** Dispatch one scout to run the `gh` queries and
