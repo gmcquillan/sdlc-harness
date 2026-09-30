@@ -12,7 +12,7 @@ verdicts, and judgment. Create a todo per checklist item.
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
    continue below unchanged; on `use-jira` read and follow the plugin's
-   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
+   `../../references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Gather metadata (main loop, small):**
    `gh pr view <PR#> --json title,body,headRefName,files,comments` — extract
    the linked ticket ref from the PR body — on GitHub the bare `<n>` of
@@ -51,7 +51,7 @@ verdicts, and judgment. Create a todo per checklist item.
    never with a directory prefix of any kind: the plugin's `bin/` is
    prepended to `PATH`, so the bare name resolves to the plugin's own copy
    from any working directory, while every prefixed form resolves
-   somewhere the script is not. `references/backend-bind.md` explains why.
+   somewhere the script is not. `../../references/backend-bind.md` explains why.
 
    The diff stays inside the pipe; only violation lines
    (`file:line — 'alias' found — should be 'canonical'`) come back. Fold

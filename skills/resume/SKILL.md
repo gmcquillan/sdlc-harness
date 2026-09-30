@@ -38,7 +38,7 @@ checklist item.
      `gh issue view <n> --json labels`. On any other backend run
      `sdlc-backend.sh resolve` — the adapter expects its caller to hold
      that output — and branch on its `action`, not on the recorded line:
-     `use-jira` → follow `references/backend-jira.md`; anything else →
+     `use-jira` → follow `../../references/backend-jira.md`; anything else →
      the binding changed since the handoff, so say so and verify on the
      backend `resolve` reports.
    Where reality disagrees with the file, reality wins; note the

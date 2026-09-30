@@ -1,7 +1,7 @@
 {
   "name": "sdlc",
   "description": "Human-gated SDLC pipeline for Claude Code: interview→spec, spec→GitHub issues, issue→implementation branch, PR review — with a 250k context tripwire and session handoff. Wraps superpowers and fable-harness skills.",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "author": {
     "name": "Gavin McQuillan",
     "email": "gavin.mcquillan@gmail.com"

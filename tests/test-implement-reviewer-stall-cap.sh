@@ -16,7 +16,7 @@ want() { # <description> <fixed-string> — assert the string IS present
 }
 
 want "step 7 points at the reviewer-dispatch reference file" \
-  'use `references/reviewer-dispatch.md` instead'
+  'use `../../references/reviewer-dispatch.md` instead'
 want "step 7 names all three dispatch sites inline" \
   'initial task review, each scoped re-review, the final'
 want "step 7 states which upstream mechanics stay unchanged" \

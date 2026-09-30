@@ -15,7 +15,7 @@ per checklist item.
 
 0. **Resolve the backend:** run `sdlc-backend.sh resolve`. On `use-github`
    continue below unchanged; on `use-jira` read and follow the plugin's
-   `references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
+   `../../references/backend-jira.md`; on `bind-needed`, `backend-bind.md`.
 1. **Select the issue.** Argument given → use it. None → list candidates:
    `gh issue list --label "sdlc:task" --state open --json
    number,title,body,labels,assignees` and pick the first that is (a) not
@@ -76,10 +76,13 @@ per checklist item.
    dispatch — initial task review, each scoped re-review, the final
    whole-branch review, that same Final Review's own scoped re-review
    of the fix wave, and step 9's separate self-review dispatch below
-   — use `references/reviewer-dispatch.md` instead of that skill's
+   — use `../../references/reviewer-dispatch.md` instead of that skill's
    own dispatch step. Everything else about the invoked skill
    (fix-round numbering, model selection, ledger format) is
-   unchanged.
+   unchanged. `../../references/` is the plugin's own directory — resolve it from this
+   skill's base directory, not from the user's repo — and read the file
+   with the Read tool; do not report it missing because a cwd-relative
+   lookup failed.
 8. **Verify.** Invoke `superpowers:verification-before-completion`.
    Run full test suites in a subagent that returns a pass/fail summary
    plus failures verbatim — never page raw test logs through this
@@ -88,7 +91,7 @@ per checklist item.
    branch diff; fix findings before delivery (verify each finding
    technically first — no performative agreement). This dispatch is in
    scope of step 7's reviewer-dispatch override too — see
-   `references/reviewer-dispatch.md`.
+   `../../references/reviewer-dispatch.md`.
 10. **Lint.** Run the project's linter/formatter and fix every finding
     before pushing. The `lint-before-push` hook is a backstop, not a
     substitute — running lint here surfaces failures in-loop instead of
@@ -127,5 +130,5 @@ everything; a mid-issue split is survivable by design.
 - Skipping the claim in step 3 → two sessions build the same issue.
 - "Tests probably pass" in step 8 → evidence before assertions, always.
 - Dispatching a 3rd reviewer subagent at a dispatch site past its stall
-  cap → see `references/reviewer-dispatch.md`'s own Red Flags; the cap
+  cap → see `../../references/reviewer-dispatch.md`'s own Red Flags; the cap
   exists precisely to stop that.

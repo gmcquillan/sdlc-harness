@@ -135,13 +135,13 @@ close transition. Create a todo per checklist item.
      For each branch classified **PR merged** above, parse `<ref>` from
      `sdlc/<ref>-<slug>`. If `<ref>` is not a bare integer (a JIRA key,
      e.g. `PROJ-123`), resolve the ticket with the adapter's `get_state`
-     operation (`references/backend-jira.md`) to confirm it is not already
+     operation (`../../references/backend-jira.md`) to confirm it is not already
      Done (`statusCategory != Done`). Already Done means no close-on-merge
      item is needed for that branch.
 
      If it is not yet Done and `workflow.done` is uncached (from the same
      `resolve` output), run "Discovering a workflow transition"
-     (`references/backend-jira.md`) against this specific ticket — it will
+     (`../../references/backend-jira.md`) against this specific ticket — it will
      be in whatever state PR-merged tickets sit in (e.g. "In Review"),
      which is a valid state to probe transitions from — and cache the name
      via `sdlc-backend.sh set-workflow --done <name>`.
@@ -185,7 +185,7 @@ close transition. Create a todo per checklist item.
      call `toolmap.ops.transition_issue` with the id matching the cached
      `workflow.done` name among that ticket's live `get_transitions`
      options (per "Discovering a workflow transition",
-     `references/backend-jira.md`). State the ticket ref and the
+     `../../references/backend-jira.md`). State the ticket ref and the
      transition name when you do it. This is the one remote-state
      mutation this skill ever performs, and it happens only here, after
      the step 4 gate — never during the read-only scan.
